@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+.env
+.env.*
+.DS_Store
+.cache/
+.vercel/
+.wrangler/
+dist/
+
+# NPPES pipeline working dir (shards uploaded to Releases, not committed)
+nppes-out/
+nppes-work/
+*.nppes.zip

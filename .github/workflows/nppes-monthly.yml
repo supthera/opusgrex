@@ -1,0 +1,134 @@
+name: NPPES Monthly Sync
+
+# Pulls the NPPES Monthly Downloadable File V.2, filters to Type 1 staffing
+# clinicians, diffs against last month's manifest, and publishes only the
+# changed per-state shards. Stats + changelog are committed to the repo; heavy
+# record shards + manifest live on a rolling "data-latest" GitHub Release.
+
+on:
+  schedule:
+    # 10th of each month, 08:00 UTC (CMS posts the monthly file by ~the 2nd week).
+    - cron: "0 8 10 * *"
+  workflow_dispatch:
+    inputs:
+      zip_url:
+        description: "Override the NPPES monthly zip URL (optional)"
+        required: false
+        type: string
+      full_rebuild:
+        description: "Rewrite every state shard (ignore incremental diff)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nppes-monthly
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: opusgrexbackend
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: data-latest
+      NODE_OPTIONS: --max-old-space-size=12288
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: opusgrexbackend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve NPPES zip URL
+        id: resolve
+        run: |
+          if [ -n "${{ github.event.inputs.zip_url }}" ]; then
+            URL="${{ github.event.inputs.zip_url }}"
+          else
+            MONTH=$(date -u +%B)
+            YEAR=$(date -u +%Y)
+            URL="https://download.cms.gov/nppes/NPPES_Data_Dissemination_${MONTH}_${YEAR}.zip"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Using NPPES zip: $URL"
+
+      - name: Download NPPES monthly zip (~1GB)
+        run: |
+          curl -fSL --retry 3 --retry-delay 10 -o nppes.zip "${{ steps.resolve.outputs.url }}"
+          ls -lh nppes.zip
+
+      - name: Fetch previous manifest from release (for incremental diff)
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release download "$RELEASE_TAG" -p manifest.json -O prev-manifest.json || true
+          fi
+          if [ -f prev-manifest.json ]; then
+            echo "Previous manifest fetched."
+          else
+            echo "No previous manifest - this run is a full baseline."
+            echo '{"npis":{}}' > prev-manifest.json
+          fi
+
+      - name: Stream-process NPPES file
+        run: |
+          # Pick the main data CSV entry (exclude the *_fileheader.csv).
+          CSV=$(unzip -Z1 nppes.zip | grep -E '^npidata_pfile_.*\.csv$' | grep -vi fileheader | head -n1)
+          echo "CSV entry: $CSV"
+          ALL_FLAG=""
+          if [ "${{ github.event.inputs.full_rebuild }}" = "true" ]; then ALL_FLAG="--all"; fi
+          # Pipe the single CSV entry straight into the processor; never extract 10GB to disk.
+          unzip -p nppes.zip "$CSV" | node scripts/nppes-sync.mjs \
+            --out nppes-out \
+            --prev prev-manifest.json \
+            $ALL_FLAG
+          echo "--- changelog ---"
+          cat nppes-out/changelog.json
+
+      - name: Ensure rolling release exists
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "NPPES Data (latest)" \
+              --notes "Rolling latest NPPES staffing dataset. Per-state record shards + manifest. Updated monthly; only changed shards are replaced."
+          fi
+
+      - name: Upload changed shards + manifest + stats to release
+        run: |
+          # Only changed shards exist in nppes-out/states (incremental); --clobber
+          # replaces just those assets, leaving unchanged states' assets intact.
+          if ls nppes-out/states/*.json >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" nppes-out/states/*.json --clobber
+          fi
+          gh release upload "$RELEASE_TAG" \
+            nppes-out/manifest.json \
+            nppes-out/stateStats.json \
+            --clobber
+
+      - name: Commit stats + changelog to repo
+        run: |
+          cp nppes-out/stateStats.json public/data/stateStats.json
+          cp nppes-out/changelog.json public/data/changelog.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/stateStats.json public/data/changelog.json
+          if git diff --cached --quiet; then
+            echo "No stat changes to commit."
+          else
+            git commit -m "chore(nppes): monthly sync $(date -u +%Y-%m-%d)"
+            git push
+          fi
