@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# NPPES harvest caches (regenerable)
+data/raw/nppes-*-harvest.json

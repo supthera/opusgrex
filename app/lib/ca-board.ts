@@ -5,6 +5,7 @@ import type {
   CaBoardClinician,
   CaBoardRoster,
   CaBoardStats,
+  CaBoardUnmatched,
   CaProfession,
 } from "@/app/lib/ca-board-types";
 
@@ -12,6 +13,7 @@ export type {
   CaBoardClinician,
   CaBoardRoster,
   CaBoardStats,
+  CaBoardUnmatched,
   CaProfession,
 } from "@/app/lib/ca-board-types";
 export { PROFESSION_META } from "@/app/lib/ca-board-types";
@@ -45,5 +47,6 @@ export async function loadCaBoardRoster(
     clinicians: (raw.clinicians as CaBoardClinician[]) || [],
     backlogNoContactSample:
       (raw.backlogNoContactSample as CaBoardClinician[]) || [],
+    unmatchedBoard: (raw.unmatchedBoard as CaBoardUnmatched[]) || [],
   };
 }

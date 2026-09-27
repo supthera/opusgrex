@@ -14,6 +14,7 @@ export async function GET() {
         disclaimer: roster.disclaimer,
         stats: roster.stats,
         clinicians: roster.clinicians,
+        unmatchedBoard: roster.unmatchedBoard ?? [],
         backlogNoContactCount: roster.stats.matchedNoContact,
       },
       {

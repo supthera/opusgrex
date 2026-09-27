@@ -16,6 +16,7 @@ import {
   PROFESSION_META,
   type CaBoardClinician,
   type CaBoardRoster,
+  type CaBoardUnmatched,
   type CaProfession,
 } from "@/app/lib/ca-board-types";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,12 @@ const PAGE_SIZE = 50;
 
 type RosterPayload = Pick<
   CaBoardRoster,
-  "generatedAt" | "disclaimer" | "stats" | "clinicians" | "profession"
+  | "generatedAt"
+  | "disclaimer"
+  | "stats"
+  | "clinicians"
+  | "profession"
+  | "unmatchedBoard"
 > & {
   backlogNoContactCount?: number;
 };
@@ -90,6 +96,39 @@ function downloadCsv(rows: CaBoardClinician[], profession: CaProfession) {
   const a = document.createElement("a");
   a.href = url;
   a.download = `${PROFESSION_META[profession].csvPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadBacklogCsv(
+  rows: CaBoardUnmatched[],
+  profession: CaProfession
+) {
+  const headers = [
+    "licenseNumber",
+    "displayName",
+    "licenseStatus",
+    "licenseType",
+    "expirationDate",
+    "boardCity",
+    "boardCounty",
+    "boardState",
+    "boardZip",
+  ];
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) => {
+      const record = r as unknown as Record<string, string | null | undefined>;
+      return headers.map((h) => csvEscape(String(record[h] ?? ""))).join(",");
+    }),
+  ];
+  const blob = new Blob([lines.join("\n")], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${PROFESSION_META[profession].backlogCsvPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -359,6 +398,19 @@ export default function CaBoardAppClient({
           >
             <Download className="size-4" />
             CSV
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-2"
+            onClick={() =>
+              downloadBacklogCsv(roster.unmatchedBoard ?? [], profession)
+            }
+            disabled={!roster.unmatchedBoard?.length}
+            title="Board-active Current licenses not yet matched to NPPES"
+          >
+            <Download className="size-4" />
+            Unmatched backlog
           </Button>
         </div>
         <p className="mt-3 text-sm text-slate-500">

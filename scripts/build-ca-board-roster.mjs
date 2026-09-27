@@ -68,9 +68,22 @@ function normalizeLicense(value) {
   return String(value || "")
     .trim()
     .replace(/^0+/, "")
-    .replace(/^(OT|PTA|PT|OTR|RPT)[\s\-]*/i, "")
+    .replace(/^(OT|PTA|PT|OTR|RPT|DPT)[\s\-]*/i, "")
+    .replace(/[\s\-]*(OT|PTA|PT|OTR|RPT|DPT)$/i, "")
     .replace(/^0+/, "")
     .toUpperCase();
+}
+
+/** Alternate keys for the same board/NPPES license string. */
+function licenseVariants(value) {
+  const raw = String(value || "").trim();
+  const norm = normalizeLicense(raw);
+  const digits = raw.replace(/\D/g, "").replace(/^0+/, "");
+  const set = new Set();
+  for (const v of [raw.toUpperCase(), norm, digits, normalizeLicense(digits)]) {
+    if (v) set.add(v);
+  }
+  return [...set];
 }
 
 function parseTsv(text) {
@@ -208,30 +221,43 @@ async function mapPool(items, concurrency, worker) {
 }
 
 function extractLicense(taxonomies, prof) {
+  const matches = [];
   for (const t of taxonomies || []) {
     const code = t.code || "";
     if (!prof.taxonomyMatch(code)) continue;
-    if (t.license) {
-      return {
-        license: normalizeLicense(t.license),
-        state: t.state || null,
-        code,
-        desc: t.desc || null,
-      };
-    }
+    matches.push({
+      license: t.license ? normalizeLicense(t.license) : null,
+      licenseRaw: t.license || null,
+      state: t.state || null,
+      code,
+      desc: t.desc || null,
+      primary: Boolean(t.primary),
+    });
   }
-  for (const t of taxonomies || []) {
-    const code = t.code || "";
-    if (prof.taxonomyMatch(code)) {
-      return {
-        license: null,
-        state: t.state || null,
-        code,
-        desc: t.desc || null,
-      };
-    }
-  }
-  return null;
+  if (!matches.length) return null;
+  // Prefer CA + license number, then primary, then any with license
+  matches.sort((a, b) => {
+    const score = (m) =>
+      (m.state === "CA" ? 8 : 0) +
+      (m.license ? 4 : 0) +
+      (m.primary ? 2 : 0);
+    return score(b) - score(a);
+  });
+  const best = matches[0];
+  return {
+    license: best.license,
+    licenseRaw: best.licenseRaw,
+    state: best.state,
+    code: best.code,
+    desc: best.desc,
+    allLicenses: [
+      ...new Set(
+        matches
+          .flatMap((m) => licenseVariants(m.licenseRaw || m.license || ""))
+          .filter(Boolean)
+      ),
+    ],
+  };
 }
 
 async function harvestNppes(prof) {
@@ -264,6 +290,7 @@ async function harvestNppes(prof) {
           credential: row.basic?.credential || null,
           reportedLicense: tax.license,
           reportedLicenseState: tax.state,
+          licenseKeys: tax.allLicenses || licenseVariants(tax.license),
           taxonomyCode: tax.code,
           taxonomyDesc: tax.desc,
           phone,
@@ -291,52 +318,126 @@ async function harvestNppes(prof) {
 function joinRoster(activeRows, nppesRows, prof) {
   const byLicense = new Map();
   for (const row of activeRows) {
-    byLicense.set(row.licenseNumber, row);
+    for (const key of licenseVariants(row.licenseNumber)) {
+      if (!byLicense.has(key)) byLicense.set(key, row);
+    }
   }
 
   const nameIndex = new Map();
+  const lastNameIndex = new Map();
   for (const row of activeRows) {
-    const key = `${normalizeName(row.lastName)}|${normalizeName(row.firstName)}`;
+    const last = normalizeName(row.lastName);
+    const first = normalizeName(row.firstName);
+    const key = `${last}|${first}`;
     if (!nameIndex.has(key)) nameIndex.set(key, []);
     nameIndex.get(key).push(row);
+    if (!lastNameIndex.has(last)) lastNameIndex.set(last, []);
+    lastNameIndex.get(last).push(row);
   }
 
   const withContact = [];
   const noContactActive = [];
   const matchedLicenses = new Set();
 
+  function pickUnique(candidates, method, confidence = "medium") {
+    if (candidates.length === 1) {
+      return { board: candidates[0], matchMethod: method, matchConfidence: confidence };
+    }
+    return null;
+  }
+
+  function disambiguate(candidates, n) {
+    if (!candidates.length) return null;
+    const available = candidates.filter(
+      (c) => !matchedLicenses.has(c.licenseNumber)
+    );
+    const pool = available.length ? available : candidates;
+
+    let hit = pickUnique(pool, "name_exact");
+    if (hit) return hit;
+
+    if (n.practice?.city) {
+      const cityMatch = pool.filter(
+        (c) =>
+          normalizeName(c.city) &&
+          normalizeName(c.city) === normalizeName(n.practice.city)
+      );
+      hit = pickUnique(cityMatch, "name_city");
+      if (hit) return hit;
+    }
+
+    if (n.practice?.postalCode) {
+      const zip3 = n.practice.postalCode.slice(0, 3);
+      const zipMatch = pool.filter(
+        (c) => c.zip && c.zip.slice(0, 3) === zip3
+      );
+      hit = pickUnique(zipMatch, "name_zip");
+      if (hit) return hit;
+    }
+
+    return null;
+  }
+
   for (const n of nppesRows) {
     let board = null;
     let matchConfidence = null;
     let matchMethod = null;
 
-    if (n.reportedLicense && byLicense.has(n.reportedLicense)) {
-      board = byLicense.get(n.reportedLicense);
-      matchConfidence = "high";
-      matchMethod = "license_number";
-    } else {
+    const licenseKeys =
+      n.licenseKeys?.length > 0
+        ? n.licenseKeys
+        : licenseVariants(n.reportedLicense);
+    for (const key of licenseKeys) {
+      if (byLicense.has(key)) {
+        const candidate = byLicense.get(key);
+        if (!matchedLicenses.has(candidate.licenseNumber)) {
+          board = candidate;
+          matchConfidence = "high";
+          matchMethod = "license_number";
+          break;
+        }
+      }
+    }
+
+    if (!board) {
       const key = `${normalizeName(n.lastName)}|${normalizeName(n.firstName)}`;
-      const candidates = nameIndex.get(key) || [];
-      if (candidates.length === 1) {
-        board = candidates[0];
-        matchConfidence = "medium";
-        matchMethod = "name_exact";
-      } else if (candidates.length > 1) {
-        const cityMatch = candidates.filter(
-          (c) =>
-            normalizeName(c.city) &&
-            n.practice?.city &&
-            normalizeName(c.city) === normalizeName(n.practice.city)
-        );
-        if (cityMatch.length === 1) {
-          board = cityMatch[0];
+      const hit = disambiguate(nameIndex.get(key) || [], n);
+      if (hit) {
+        board = hit.board;
+        matchConfidence = hit.matchConfidence;
+        matchMethod = hit.matchMethod;
+      }
+    }
+
+    // Last name + first initial, only when unique among unmatched
+    if (!board && n.firstName) {
+      const last = normalizeName(n.lastName);
+      const initial = normalizeName(n.firstName).charAt(0);
+      const candidates = (lastNameIndex.get(last) || []).filter(
+        (c) =>
+          !matchedLicenses.has(c.licenseNumber) &&
+          normalizeName(c.firstName).charAt(0) === initial
+      );
+      const hit = disambiguate(candidates, n);
+      if (hit && hit.matchMethod !== "name_exact") {
+        // only accept when geo disambiguated — initial alone is too weak
+        if (hit.matchMethod === "name_city" || hit.matchMethod === "name_zip") {
+          board = hit.board;
           matchConfidence = "medium";
-          matchMethod = "name_city";
+          matchMethod = `name_initial_${hit.matchMethod.split("_")[1]}`;
+        }
+      } else if (hit && candidates.length === 1 && n.practice?.postalCode) {
+        const zip3 = n.practice.postalCode.slice(0, 3);
+        if (hit.board.zip?.slice(0, 3) === zip3) {
+          board = hit.board;
+          matchConfidence = "medium";
+          matchMethod = "name_initial_zip";
         }
       }
     }
 
     if (!board) continue;
+    if (matchedLicenses.has(board.licenseNumber)) continue;
     matchedLicenses.add(board.licenseNumber);
 
     const hasContact = Boolean(n.phone || n.email);
@@ -379,12 +480,31 @@ function joinRoster(activeRows, nppesRows, prof) {
     else noContactActive.push(record);
   }
 
-  let unmatchedActive = 0;
+  const unmatchedBoard = [];
   for (const row of activeRows) {
-    if (!matchedLicenses.has(row.licenseNumber)) unmatchedActive += 1;
+    if (matchedLicenses.has(row.licenseNumber)) continue;
+    unmatchedBoard.push({
+      licenseNumber: row.licenseNumber,
+      displayName: [row.firstName, row.middleName, row.lastName]
+        .filter(Boolean)
+        .join(" "),
+      licenseStatus: row.licenseStatus,
+      licenseType: row.licenseType,
+      expirationDate: row.expirationDate,
+      boardCity: row.city,
+      boardCounty: row.county,
+      boardState: row.state,
+      boardZip: row.zip,
+    });
   }
 
-  return { withContact, noContactActive, unmatchedActive, matchedLicenses };
+  return {
+    withContact,
+    noContactActive,
+    unmatchedActive: unmatchedBoard.length,
+    matchedLicenses,
+    unmatchedBoard,
+  };
 }
 
 function mapNppesRow(row, prof) {
@@ -400,6 +520,7 @@ function mapNppesRow(row, prof) {
     credential: row.basic?.credential || null,
     reportedLicense: tax.license,
     reportedLicenseState: tax.state,
+    licenseKeys: tax.allLicenses || licenseVariants(tax.license),
     taxonomyCode: tax.code,
     taxonomyDesc: tax.desc,
     phone: pickPhone(row.addresses),
@@ -427,11 +548,28 @@ async function enrichUnmatchedByName(activeRows, matchedLicenses, byNpi, prof) {
       url.searchParams.set("last_name", row.lastName);
       url.searchParams.set("first_name", row.firstName);
       url.searchParams.set("state", "CA");
+      if (row.zip) url.searchParams.set("postal_code", row.zip.slice(0, 5));
       url.searchParams.set("limit", "5");
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
-      for (const result of data.results || []) {
+      // Fallback without ZIP if empty
+      let results = data.results || [];
+      if (!results.length && row.zip) {
+        const url2 = new URL(NPPES_API);
+        url2.searchParams.set("version", "2.1");
+        url2.searchParams.set("enumeration_type", "NPI-1");
+        url2.searchParams.set("taxonomy_description", prof.taxonomyDescription);
+        url2.searchParams.set("last_name", row.lastName);
+        url2.searchParams.set("first_name", row.firstName);
+        url2.searchParams.set("state", "CA");
+        url2.searchParams.set("limit", "5");
+        const res2 = await fetch(url2);
+        if (res2.ok) {
+          results = (await res2.json()).results || [];
+        }
+      }
+      for (const result of results) {
         const mapped = mapNppesRow(result, prof);
         if (!mapped) continue;
         if (!byNpi.has(mapped.npi)) {
@@ -475,7 +613,25 @@ async function main() {
     `Active Current ${prof.plural} (board): ${activeRows.length}`
   );
 
-  const nppesRows = await harvestNppes(prof);
+  const harvestCache = path.join(RAW_DIR, `nppes-${prof.key}-harvest.json`);
+  const useCache = process.argv.includes("--use-cache");
+  let nppesRows;
+  if (useCache) {
+    try {
+      nppesRows = JSON.parse(await readFile(harvestCache, "utf8"));
+      console.log(
+        `Using cached NPPES harvest ${harvestCache} (${nppesRows.length} NPIs)`
+      );
+    } catch {
+      nppesRows = null;
+    }
+  }
+  if (!nppesRows) {
+    nppesRows = await harvestNppes(prof);
+    await mkdir(RAW_DIR, { recursive: true });
+    await writeFile(harvestCache, JSON.stringify(nppesRows));
+    console.log(`Cached NPPES harvest → ${harvestCache}`);
+  }
   console.log(
     `NPPES ${prof.label} NPIs harvested (ZIP sweep): ${nppesRows.length}`
   );
@@ -483,7 +639,7 @@ async function main() {
   const byNpi = new Map(nppesRows.map((n) => [n.npi, n]));
   let joined = joinRoster(activeRows, [...byNpi.values()], prof);
 
-  if (joined.unmatchedActive > 0) {
+  if (joined.unmatchedActive > 0 && !process.argv.includes("--join-only")) {
     await enrichUnmatchedByName(
       activeRows,
       joined.matchedLicenses,
@@ -491,11 +647,17 @@ async function main() {
       prof
     );
     joined = joinRoster(activeRows, [...byNpi.values()], prof);
+    // Refresh cache with name-pass additions
+    await writeFile(harvestCache, JSON.stringify([...byNpi.values()]));
   }
 
-  const { withContact, noContactActive, unmatchedActive } = joined;
+  const { withContact, noContactActive, unmatchedActive, unmatchedBoard } =
+    joined;
 
   withContact.sort((a, b) =>
+    a.displayName.localeCompare(b.displayName, "en", { sensitivity: "base" })
+  );
+  unmatchedBoard.sort((a, b) =>
     a.displayName.localeCompare(b.displayName, "en", { sensitivity: "base" })
   );
 
@@ -516,6 +678,7 @@ async function main() {
     },
     clinicians: withContact,
     backlogNoContactSample: noContactActive.slice(0, 50),
+    unmatchedBoard,
   };
 
   // Drop undefined alias keys
