@@ -17,7 +17,7 @@ import {
   type CaBoardClinician,
   type CaBoardRoster,
   type CaProfession,
-} from "@/app/lib/ca-board";
+} from "@/app/lib/ca-board-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
