@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Download,
   LoaderCircle,
@@ -138,7 +139,13 @@ export default function CaBoardAppClient({
 }: {
   initialProfession?: CaProfession;
 }) {
-  const [profession, setProfession] = useState<CaProfession>(initialProfession);
+  const searchParams = useSearchParams();
+  const profession: CaProfession =
+    searchParams.get("profession") === "pt"
+      ? "pt"
+      : searchParams.get("profession") === "ot"
+        ? "ot"
+        : initialProfession;
   const [roster, setRoster] = useState<RosterPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,26 +272,6 @@ export default function CaBoardAppClient({
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap gap-2">
-        {(["ot", "pt"] as const).map((key) => {
-          const active = profession === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setProfession(key)}
-              className={
-                active
-                  ? "rounded-lg bg-[#0F4C81] px-4 py-2 text-sm font-semibold text-white"
-                  : "rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-[#0F4C81]/40"
-              }
-            >
-              CA {PROFESSION_META[key].label}
-            </button>
-          );
-        })}
-      </div>
-
       <div className="rounded-2xl border border-[#4A9B8E]/25 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
         <strong className="text-slate-900">Data labels:</strong>{" "}
         {roster.disclaimer} Generated{" "}
