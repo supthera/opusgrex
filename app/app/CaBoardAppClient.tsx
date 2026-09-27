@@ -284,6 +284,28 @@ export default function CaBoardAppClient({
               <option value="both">Phone + email</option>
             </select>
           </label>
+          <div className="block text-sm">
+            <span className="mb-1.5 block font-medium text-slate-700">
+              Quick filter
+            </span>
+            <button
+              type="button"
+              aria-pressed={contact === "email"}
+              onClick={() => {
+                setContact((prev) => (prev === "email" ? "all" : "email"));
+                setPage(1);
+              }}
+              className={cn(
+                "inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors",
+                contact === "email"
+                  ? "border-[#0F4C81] bg-[#0F4C81] text-white shadow-sm"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-[#0F4C81]/40 hover:bg-slate-50"
+              )}
+            >
+              <Mail className="size-4" />
+              Has email
+            </button>
+          </div>
           <label className="block text-sm lg:w-48">
             <span className="mb-1.5 block font-medium text-slate-700">
               Board county
