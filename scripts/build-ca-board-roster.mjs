@@ -131,14 +131,15 @@ function parseTsv(text) {
   return rows;
 }
 
-async function downloadDcaFile(prof) {
-  await mkdir(RAW_DIR, { recursive: true });
-  const dest = path.join(RAW_DIR, prof.rawFile);
-  console.log("Fetching DCA Box token…");
+async function fetchDcaBoxToken() {
   const token = await (await fetch(DCA_TOKEN_URL)).text();
+  return token.trim();
+}
+
+async function findDcaDataFile(token, folderId, label) {
   const itemsRes = await fetch(
-    `https://api.box.com/2.0/folders/${prof.boxFolder}/items?limit=100&fields=name,id,type,size`,
-    { headers: { Authorization: `Bearer ${token.trim()}` } }
+    `https://api.box.com/2.0/folders/${folderId}/items?limit=100&fields=name,id,type,size,modified_at,sha1`,
+    { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!itemsRes.ok) {
     throw new Error(`Box list failed: ${itemsRes.status}`);
@@ -147,18 +148,40 @@ async function downloadDcaFile(prof) {
   const file = (items.entries || []).find((e) =>
     String(e.name).includes("Data")
   );
-  if (!file) throw new Error(`${prof.label} Data file not found in Box folder`);
+  if (!file) throw new Error(`${label} Data file not found in Box folder`);
+  return file;
+}
 
-  console.log(`Downloading ${file.name} (${file.size} bytes)…`);
+async function downloadDcaFile(prof, { force = false } = {}) {
+  await mkdir(RAW_DIR, { recursive: true });
+  const dest = path.join(RAW_DIR, prof.rawFile);
+  console.log("Fetching DCA Box token…");
+  const token = await fetchDcaBoxToken();
+  const file = await findDcaDataFile(token, prof.boxFolder, prof.label);
+
+  console.log(
+    `${force ? "Force-downloading" : "Downloading"} ${file.name} (${file.size} bytes)…`
+  );
   const contentRes = await fetch(
     `https://api.box.com/2.0/files/${file.id}/content`,
-    { headers: { Authorization: `Bearer ${token.trim()}` }, redirect: "follow" }
+    { headers: { Authorization: `Bearer ${token}` }, redirect: "follow" }
   );
   if (!contentRes.ok || !contentRes.body) {
     throw new Error(`Box download failed: ${contentRes.status}`);
   }
   await pipeline(Readable.fromWeb(contentRes.body), createWriteStream(dest));
-  return dest;
+  return {
+    dest,
+    meta: {
+      folderId: prof.boxFolder,
+      fileId: String(file.id),
+      name: file.name,
+      size: file.size,
+      modifiedAt: file.modified_at || null,
+      sha1: file.sha1 || null,
+      rawFile: prof.rawFile,
+    },
+  };
 }
 
 function loadActiveLicensees(tsvText, prof) {
@@ -643,13 +666,21 @@ async function main() {
   }
 
   const dcaPath = path.join(RAW_DIR, prof.rawFile);
+  const forceDownload = process.argv.includes("--force-download");
   let tsv;
-  try {
-    tsv = await readFile(dcaPath, "utf8");
-    console.log("Using cached DCA file", dcaPath);
-  } catch {
-    await downloadDcaFile(prof);
-    tsv = await readFile(dcaPath, "utf8");
+  let dcaMeta = null;
+  if (!forceDownload) {
+    try {
+      tsv = await readFile(dcaPath, "utf8");
+      console.log("Using cached DCA file", dcaPath);
+    } catch {
+      // fall through to download
+    }
+  }
+  if (!tsv) {
+    const downloaded = await downloadDcaFile(prof, { force: forceDownload });
+    dcaMeta = downloaded.meta;
+    tsv = await readFile(downloaded.dest, "utf8");
   }
 
   const activeRows = loadActiveLicensees(tsv, prof);
@@ -736,6 +767,27 @@ async function main() {
   console.log(
     `Wrote ${outFile} (${withContact.length} contactable ${prof.plural}, ${noContactActive.length} matched no-contact, ${unmatchedActive} unmatched active)`
   );
+
+  if (dcaMeta) {
+    const manifestPath = path.join(RAW_DIR, "dca-source-manifest.json");
+    let manifest = { sources: {}, updatedAt: null };
+    try {
+      manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      if (!manifest.sources) manifest.sources = {};
+    } catch {
+      // new manifest
+    }
+    manifest.sources[prof.rawFile] = {
+      ...dcaMeta,
+      professions: Object.values(PROFESSIONS)
+        .filter((p) => p.rawFile === prof.rawFile)
+        .map((p) => p.key),
+      recordedAt: new Date().toISOString(),
+    };
+    manifest.updatedAt = new Date().toISOString();
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+    console.log(`Updated DCA source manifest → ${manifestPath}`);
+  }
 }
 
 main().catch((err) => {
