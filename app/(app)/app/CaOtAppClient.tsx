@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  Download,
+  LoaderCircle,
   Mail,
   Phone,
   Search,
@@ -15,6 +17,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 50;
+
+type RosterPayload = Pick<
+  CaOtRoster,
+  "generatedAt" | "disclaimer" | "stats" | "clinicians"
+> & {
+  backlogNoContactCount?: number;
+};
 
 function StatCard({
   label,
@@ -38,7 +47,53 @@ function StatCard({
   );
 }
 
-export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
+function csvEscape(value: string | null | undefined) {
+  const s = value ?? "";
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadCsv(rows: CaOtClinician[]) {
+  const headers = [
+    "licenseNumber",
+    "displayName",
+    "credential",
+    "npi",
+    "phone",
+    "email",
+    "practiceCity",
+    "practiceState",
+    "practiceZip",
+    "boardCity",
+    "boardCounty",
+    "expirationDate",
+    "matchConfidence",
+    "matchMethod",
+    "licenseStatus",
+  ];
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) => {
+      const record = r as unknown as Record<string, string | null | undefined>;
+      return headers.map((h) => csvEscape(String(record[h] ?? ""))).join(",");
+    }),
+  ];
+  const blob = new Blob([lines.join("\n")], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `opusgrex-ca-ot-contactable-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export default function CaOtAppClient() {
+  const [roster, setRoster] = useState<RosterPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const [query, setQuery] = useState("");
   const [confidence, setConfidence] = useState<"all" | "high" | "medium">(
     "all"
@@ -49,15 +104,42 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
   const [county, setCounty] = useState("all");
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/ca-ot");
+        if (!res.ok) throw new Error(`Failed to load roster (${res.status})`);
+        const data = (await res.json()) as RosterPayload;
+        if (!cancelled) {
+          setRoster(data);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load roster");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const counties = useMemo(() => {
+    if (!roster) return [];
     const set = new Set<string>();
     for (const c of roster.clinicians) {
       if (c.boardCounty) set.add(c.boardCounty);
     }
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [roster.clinicians]);
+  }, [roster]);
 
   const filtered = useMemo(() => {
+    if (!roster) return [];
     const q = query.trim().toLowerCase();
     return roster.clinicians.filter((c) => {
       if (confidence !== "all" && c.matchConfidence !== confidence) return false;
@@ -81,7 +163,7 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [roster.clinicians, query, confidence, contact, county]);
+  }, [roster, query, confidence, contact, county]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -90,6 +172,24 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
     safePage * PAGE_SIZE
   );
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-20 text-slate-600 shadow-sm">
+        <LoaderCircle className="size-5 animate-spin text-[#0F4C81]" />
+        Loading CA OT roster…
+      </div>
+    );
+  }
+
+  if (error || !roster) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
+        {error || "Roster unavailable."}
+      </div>
+    );
+  }
+
+  const withPhone = roster.clinicians.filter((c) => c.phone).length;
   const withEmail = roster.clinicians.filter((c) => c.email).length;
   const high = roster.clinicians.filter(
     (c) => c.matchConfidence === "high"
@@ -97,6 +197,15 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
 
   return (
     <div className="space-y-8">
+      <div className="rounded-2xl border border-[#4A9B8E]/25 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
+        <strong className="text-slate-900">Data labels:</strong>{" "}
+        {roster.disclaimer} Generated{" "}
+        {new Date(roster.generatedAt).toLocaleString("en-US", {
+          timeZone: "America/Los_Angeles",
+        })}{" "}
+        PT.
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Board-active OTs"
@@ -109,9 +218,9 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
           hint="Primary table — phone and/or email via NPPES"
         />
         <StatCard
-          label="Phone present"
-          value={roster.clinicians.length.toLocaleString()}
-          hint={`${withEmail.toLocaleString()} also have email`}
+          label="Phone / email"
+          value={`${withPhone.toLocaleString()} / ${withEmail.toLocaleString()}`}
+          hint="Public NPPES practice phone · Direct email when listed"
         />
         <StatCard
           label="High-confidence match"
@@ -192,6 +301,16 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
               ))}
             </select>
           </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-2"
+            onClick={() => downloadCsv(filtered)}
+            disabled={filtered.length === 0}
+          >
+            <Download className="size-4" />
+            CSV
+          </Button>
         </div>
         <p className="mt-3 text-sm text-slate-500">
           Showing {filtered.length.toLocaleString()} of{" "}
@@ -292,8 +411,8 @@ export default function CaOtAppClient({ roster }: { roster: CaOtRoster }) {
         </div>
         <div className="rounded-2xl border border-slate-200 bg-[#0F4C81]/5 px-4 py-4 text-sm text-slate-700">
           <Phone className="mb-2 size-4 text-[#0F4C81]" />
-          Table only includes rows with a public <strong>phone and/or email</strong>{" "}
-          from NPPES.
+          Table only includes rows with a public{" "}
+          <strong>phone and/or email</strong> from NPPES.
         </div>
       </div>
     </div>

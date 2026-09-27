@@ -239,10 +239,6 @@ async function harvestNppes() {
           practice,
         });
       }
-      if ((data.results || []).length < 200) {
-        // fewer than a full page — remaining skips for this prefix are empty;
-        // we still issue them for simplicity.
-      }
     } catch (err) {
       console.warn(`NPPES page failed ${task.postalPrefix}/${task.skip}:`, err.message);
     }
@@ -352,7 +348,68 @@ function joinRoster(activeOts, nppesRows) {
     if (!matchedLicenses.has(ot.licenseNumber)) unmatchedActive += 1;
   }
 
-  return { withContact, noContactActive, unmatchedActive };
+  return { withContact, noContactActive, unmatchedActive, matchedLicenses };
+}
+
+function mapNppesRow(row) {
+  if (!row.number) return null;
+  if (row.basic?.status && row.basic.status !== "A") return null;
+  const tax = extractOtLicense(row.taxonomies);
+  if (!tax) return null;
+  return {
+    npi: row.number,
+    firstName: row.basic?.first_name || "",
+    lastName: row.basic?.last_name || "",
+    middleName: row.basic?.middle_name || "",
+    credential: row.basic?.credential || null,
+    reportedLicense: tax.license,
+    reportedLicenseState: tax.state,
+    taxonomyCode: tax.code,
+    taxonomyDesc: tax.desc,
+    phone: pickPhone(row.addresses),
+    email: pickEmail(row.endpoints),
+    practice: pickPractice(row.addresses),
+  };
+}
+
+async function enrichUnmatchedByName(activeOts, matchedLicenses, byNpi) {
+  const unmatched = activeOts.filter(
+    (ot) => !matchedLicenses.has(ot.licenseNumber)
+  );
+  console.log(`Name-pass NPPES lookups for ${unmatched.length} unmatched OTs…`);
+
+  let done = 0;
+  let added = 0;
+  await mapPool(unmatched, 12, async (ot) => {
+    try {
+      const url = new URL(NPPES_API);
+      url.searchParams.set("version", "2.1");
+      url.searchParams.set("enumeration_type", "NPI-1");
+      url.searchParams.set("taxonomy_description", "Occupational Therapist");
+      url.searchParams.set("last_name", ot.lastName);
+      url.searchParams.set("first_name", ot.firstName);
+      url.searchParams.set("state", "CA");
+      url.searchParams.set("limit", "5");
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const row of data.results || []) {
+        const mapped = mapNppesRow(row);
+        if (!mapped) continue;
+        if (!byNpi.has(mapped.npi)) {
+          byNpi.set(mapped.npi, mapped);
+          added += 1;
+        }
+      }
+    } catch {
+      // ignore individual lookup failures
+    }
+    done += 1;
+    if (done % 500 === 0 || done === unmatched.length) {
+      console.log(`  name-pass ${done}/${unmatched.length} (+${added} NPIs)`);
+    }
+  });
+  return added;
 }
 
 async function main() {
@@ -369,12 +426,21 @@ async function main() {
   console.log(`Active Current OTs (board): ${activeOts.length}`);
 
   const nppesRows = await harvestNppes();
-  console.log(`NPPES OT NPIs harvested: ${nppesRows.length}`);
+  console.log(`NPPES OT NPIs harvested (ZIP sweep): ${nppesRows.length}`);
 
-  const { withContact, noContactActive, unmatchedActive } = joinRoster(
-    activeOts,
-    nppesRows
-  );
+  const byNpi = new Map(nppesRows.map((n) => [n.npi, n]));
+  let joined = joinRoster(activeOts, [...byNpi.values()]);
+
+  if (joined.unmatchedActive > 0) {
+    await enrichUnmatchedByName(
+      activeOts,
+      joined.matchedLicenses,
+      byNpi
+    );
+    joined = joinRoster(activeOts, [...byNpi.values()]);
+  }
+
+  const { withContact, noContactActive, unmatchedActive } = joined;
 
   withContact.sort((a, b) =>
     a.displayName.localeCompare(b.displayName, "en", { sensitivity: "base" })
@@ -387,7 +453,7 @@ async function main() {
       "License status is from the California DCA / Board of Occupational Therapy public licensee file (Current). NPI, practice address, phone, and email (when present) are enriched from CMS NPPES. An NPI does not prove licensure; board status does.",
     stats: {
       boardActiveOt: activeOts.length,
-      nppesOtHarvested: nppesRows.length,
+      nppesOtHarvested: byNpi.size,
       matchedWithContact: withContact.length,
       matchedNoContact: noContactActive.length,
       unmatchedActiveBoard: unmatchedActive,

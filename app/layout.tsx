@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Source_Serif_4 } from "next/font/google";
 
-import Footer from "@/app/components/Footer";
-import Navbar from "@/app/components/Navbar";
-
 import "./globals.css";
 
 const inter = Inter({
@@ -29,11 +26,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${sourceSerif.variable} h-full scroll-smooth antialiased`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${sourceSerif.variable} h-full scroll-smooth antialiased`}
+    >
       <body className="min-h-full bg-[#FAF9F6] font-sans text-slate-600">
-        <Navbar />
         {children}
-        <Footer />
       </body>
     </html>
   );
