@@ -1,12 +1,17 @@
-# CA OT recruiting data
+# CA board recruiting data
 
-- `ca-ot-roster.json` — generated roster for `/app` (board-active Current OTs with NPPES public contact).
-- `raw/` — cached California DCA Occupational Therapy public licensee file (optional; rebuild script can re-download).
+- `ca-ot-roster.json` — contactable active California Occupational Therapists for `/app`
+- `ca-pt-roster.json` — contactable active California Physical Therapists for `/app`
+- `raw/` — cached California DCA public licensee files (OT + PT)
 
 Rebuild:
 
 ```bash
 npm run build:ca-ot
+npm run build:ca-pt
+# or: npm run build:ca-board -- ot|pt
 ```
 
-Pipeline: DCA/CBOT public file (source of truth) → filter Occupational Therapist + Current → enrich via NPPES Registry API (CA ZIP sweeps) → keep rows with phone and/or email. License number is primary key; NPI secondary.
+Pipeline: DCA board public file (source of truth) → filter profession + Current → enrich via NPPES Registry API (CA ZIP sweeps + name pass) → keep rows with phone and/or email. License number is primary key; NPI secondary.
+
+Assistants (OTA / PTA) are excluded.

@@ -17,7 +17,7 @@ export default function AppShellLayout({
               OpusGrex
             </Link>
             <span className="rounded-md bg-[#0F4C81]/10 px-2 py-0.5 text-xs font-medium text-[#0F4C81]">
-              CA OT App
+              CA OT / PT App
             </span>
           </div>
           <Link

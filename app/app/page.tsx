@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
-import CaOtAppClient from "./CaOtAppClient";
+import CaBoardAppClient from "./CaBoardAppClient";
 
 export const metadata: Metadata = {
-  title: "CA OT Recruiting App — OpusGrex",
+  title: "CA OT / PT Recruiting App — OpusGrex",
   description:
-    "Active California Occupational Therapists from DCA/CBOT, enriched with NPPES public contact info.",
+    "Active California Occupational and Physical Therapists from DCA boards, enriched with NPPES public contact info.",
 };
 
 export default function AppPage() {
@@ -17,18 +17,18 @@ export default function AppPage() {
             Recruiting app
           </p>
           <h1 className="mt-2 font-heading text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
-            California active OTs
+            California active OTs &amp; PTs
           </h1>
           <p className="mt-3 text-base leading-relaxed text-slate-600">
-            Board-sourced <strong>Current</strong> Occupational Therapist
-            licenses from California DCA / CBOT, enriched with NPPES practice
+            Board-sourced <strong>Current</strong> Occupational and Physical
+            Therapist licenses from California DCA, enriched with NPPES practice
             phone and email when publicly listed. Separate from the marketing
             site.
           </p>
         </div>
 
         <div className="mt-8">
-          <CaOtAppClient />
+          <CaBoardAppClient initialProfession="ot" />
         </div>
       </div>
     </main>

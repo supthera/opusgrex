@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "build:ca-ot": "node scripts/build-ca-ot-roster.mjs"
+    "build:ca-ot": "node scripts/build-ca-ot-roster.mjs",
+    "build:ca-pt": "node scripts/build-ca-pt-roster.mjs",
+    "build:ca-board": "node scripts/build-ca-board-roster.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
