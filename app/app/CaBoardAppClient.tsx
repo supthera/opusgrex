@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Download,
@@ -16,25 +16,27 @@ import {
 import {
   PROFESSION_META,
   type CaBoardClinician,
-  type CaBoardRoster,
-  type CaBoardUnmatched,
+  type CaBoardStats,
   type CaProfession,
 } from "@/app/lib/ca-board-types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 
-type RosterPayload = Pick<
-  CaBoardRoster,
-  | "generatedAt"
-  | "disclaimer"
-  | "stats"
-  | "clinicians"
-  | "profession"
-  | "unmatchedBoard"
-> & {
-  backlogNoContactCount?: number;
+type PagePayload = {
+  generatedAt: string;
+  profession: CaProfession;
+  disclaimer: string;
+  stats: CaBoardStats;
+  counties: string[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  clinicians: CaBoardClinician[];
+  unmatchedCount: number;
 };
 
 function StatCard({
@@ -59,79 +61,29 @@ function StatCard({
   );
 }
 
-function csvEscape(value: string | null | undefined) {
-  const s = value ?? "";
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
-
-function downloadCsv(rows: CaBoardClinician[], profession: CaProfession) {
-  const headers = [
-    "licenseNumber",
-    "displayName",
-    "credential",
-    "npi",
-    "phone",
-    "email",
-    "practiceCity",
-    "practiceState",
-    "practiceZip",
-    "boardCity",
-    "boardCounty",
-    "expirationDate",
-    "matchConfidence",
-    "matchMethod",
-    "licenseStatus",
-  ];
-  const lines = [
-    headers.join(","),
-    ...rows.map((r) => {
-      const record = r as unknown as Record<string, string | null | undefined>;
-      return headers.map((h) => csvEscape(String(record[h] ?? ""))).join(",");
-    }),
-  ];
-  const blob = new Blob([lines.join("\n")], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${PROFESSION_META[profession].csvPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function downloadBacklogCsv(
-  rows: CaBoardUnmatched[],
-  profession: CaProfession
+function buildApiUrl(
+  profession: CaProfession,
+  opts: {
+    page: number;
+    q: string;
+    confidence: string;
+    contact: string;
+    county: string;
+    exportType?: "contactable" | "backlog";
+  }
 ) {
-  const headers = [
-    "licenseNumber",
-    "displayName",
-    "licenseStatus",
-    "licenseType",
-    "expirationDate",
-    "boardCity",
-    "boardCounty",
-    "boardState",
-    "boardZip",
-  ];
-  const lines = [
-    headers.join(","),
-    ...rows.map((r) => {
-      const record = r as unknown as Record<string, string | null | undefined>;
-      return headers.map((h) => csvEscape(String(record[h] ?? ""))).join(",");
-    }),
-  ];
-  const blob = new Blob([lines.join("\n")], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${PROFESSION_META[profession].backlogCsvPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const params = new URLSearchParams();
+  if (opts.exportType) {
+    params.set("export", opts.exportType);
+  } else {
+    params.set("page", String(opts.page));
+    params.set("pageSize", String(PAGE_SIZE));
+  }
+  if (opts.q.trim()) params.set("q", opts.q.trim());
+  if (opts.confidence !== "all") params.set("confidence", opts.confidence);
+  if (opts.contact !== "all") params.set("contact", opts.contact);
+  if (opts.county !== "all") params.set("county", opts.county);
+  return `${PROFESSION_META[profession].apiPath}?${params.toString()}`;
 }
 
 export default function CaBoardAppClient({
@@ -146,11 +98,13 @@ export default function CaBoardAppClient({
       : searchParams.get("profession") === "ot"
         ? "ot"
         : initialProfession;
-  const [roster, setRoster] = useState<RosterPayload | null>(null);
+
+  const [roster, setRoster] = useState<PagePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [confidence, setConfidence] = useState<"all" | "high" | "medium">(
     "all"
   );
@@ -163,22 +117,36 @@ export default function CaBoardAppClient({
   const meta = PROFESSION_META[profession];
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    setQuery("");
+    setDebouncedQuery("");
+    setConfidence("all");
+    setContact("all");
+    setCounty("all");
+    setPage(1);
+  }, [profession]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch(PROFESSION_META[profession].apiPath);
+        const url = buildApiUrl(profession, {
+          page,
+          q: debouncedQuery,
+          confidence,
+          contact,
+          county,
+        });
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to load roster (${res.status})`);
-        const data = (await res.json()) as RosterPayload;
-        if (!cancelled) {
-          setRoster(data);
-          setQuery("");
-          setConfidence("all");
-          setContact("all");
-          setCounty("all");
-          setPage(1);
-        }
+        const data = (await res.json()) as PagePayload;
+        if (!cancelled) setRoster(data);
       } catch (e) {
         if (!cancelled) {
           setRoster(null);
@@ -191,53 +159,9 @@ export default function CaBoardAppClient({
     return () => {
       cancelled = true;
     };
-  }, [profession]);
+  }, [profession, page, debouncedQuery, confidence, contact, county]);
 
-  const counties = useMemo(() => {
-    if (!roster) return [];
-    const set = new Set<string>();
-    for (const c of roster.clinicians) {
-      if (c.boardCounty) set.add(c.boardCounty);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [roster]);
-
-  const filtered = useMemo(() => {
-    if (!roster) return [];
-    const q = query.trim().toLowerCase();
-    return roster.clinicians.filter((c) => {
-      if (confidence !== "all" && c.matchConfidence !== confidence) return false;
-      if (contact === "phone" && !c.phone) return false;
-      if (contact === "email" && !c.email) return false;
-      if (contact === "both" && !(c.phone && c.email)) return false;
-      if (county !== "all" && c.boardCounty !== county) return false;
-      if (!q) return true;
-      const hay = [
-        c.displayName,
-        c.licenseNumber,
-        c.npi,
-        c.phone,
-        c.email,
-        c.practiceCity,
-        c.boardCity,
-        c.boardCounty,
-        c.credential,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [roster, query, confidence, contact, county]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount);
-  const pageRows = filtered.slice(
-    (safePage - 1) * PAGE_SIZE,
-    safePage * PAGE_SIZE
-  );
-
-  if (loading) {
+  if (loading && !roster) {
     return (
       <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-slate-600 shadow-sm">
         <LoaderCircle className="size-5 animate-spin text-[#0F4C81]" />
@@ -258,17 +182,22 @@ export default function CaBoardAppClient({
     );
   }
 
-  const withPhone = roster.clinicians.filter((c) => c.phone).length;
-  const withEmail = roster.clinicians.filter((c) => c.email).length;
-  const high = roster.clinicians.filter(
-    (c) => c.matchConfidence === "high"
-  ).length;
   const matchRate =
     roster.stats.boardActive > 0
       ? Math.round(
           (roster.stats.matchedWithContact / roster.stats.boardActive) * 100
         )
       : 0;
+
+  const exportHref = (exportType: "contactable" | "backlog") =>
+    buildApiUrl(profession, {
+      page: 1,
+      q: debouncedQuery,
+      confidence,
+      contact,
+      county,
+      exportType,
+    });
 
   return (
     <div className="space-y-8">
@@ -293,14 +222,14 @@ export default function CaBoardAppClient({
           hint={`${matchRate}% of board-active · phone and/or email via NPPES`}
         />
         <StatCard
-          label="Phone / email"
-          value={`${withPhone.toLocaleString()} / ${withEmail.toLocaleString()}`}
-          hint="Public NPPES practice phone · Direct email when listed"
+          label="Showing now"
+          value={roster.total.toLocaleString()}
+          hint="Contactable rows after current filters"
         />
         <StatCard
-          label="High-confidence match"
-          value={high.toLocaleString()}
-          hint="License number aligned board ↔ NPPES"
+          label="Unmatched backlog"
+          value={roster.unmatchedCount.toLocaleString()}
+          hint="Board-active, not yet matched to NPPES"
         />
       </div>
 
@@ -369,46 +298,35 @@ export default function CaBoardAppClient({
               className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-[#0F4C81] focus:ring-2 focus:ring-[#0F4C81]/20"
             >
               <option value="all">All counties</option>
-              {counties.map((c) => (
+              {roster.counties.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
               ))}
             </select>
           </label>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 gap-2"
-            onClick={() => downloadCsv(filtered, profession)}
-            disabled={filtered.length === 0}
+          <a
+            href={exportHref("contactable")}
+            className={cn(buttonVariants({ variant: "outline" }), "h-10 gap-2")}
           >
             <Download className="size-4" />
             CSV
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 gap-2"
-            onClick={() =>
-              downloadBacklogCsv(roster.unmatchedBoard ?? [], profession)
-            }
-            disabled={!roster.unmatchedBoard?.length}
-            title="Board-active Current licenses not yet matched to NPPES"
+          </a>
+          <a
+            href={exportHref("backlog")}
+            className={cn(buttonVariants({ variant: "outline" }), "h-10 gap-2")}
           >
             <Download className="size-4" />
             Unmatched backlog
-          </Button>
+          </a>
         </div>
         <p className="mt-3 text-sm text-slate-500">
-          Showing {filtered.length.toLocaleString()} of{" "}
-          {roster.clinicians.length.toLocaleString()} contactable rows (filters
-          applied). Funnel:{" "}
-          {roster.stats.boardActive.toLocaleString()} board-active Current →{" "}
-          {roster.stats.matchedWithContact.toLocaleString()} matched to NPPES
-          with phone/email →{" "}
-          {roster.stats.unmatchedActiveBoard.toLocaleString()} still unmatched
-          to NPPES (excluded — no reliable public contact yet).
+          Showing page {roster.page} · {roster.total.toLocaleString()}{" "}
+          contactable after filters ·{" "}
+          {roster.stats.boardActive.toLocaleString()} board-active Current ·{" "}
+          {roster.unmatchedCount.toLocaleString()} unmatched (excluded from
+          table).
+          {loading ? " Updating…" : null}
         </p>
       </div>
 
@@ -453,10 +371,10 @@ export default function CaBoardAppClient({
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((row) => (
+              {roster.clinicians.map((row) => (
                 <ClinicianRow key={row.licenseNumber} row={row} />
               ))}
-              {pageRows.length === 0 && (
+              {roster.clinicians.length === 0 && (
                 <tr>
                   <td
                     colSpan={9}
@@ -472,18 +390,20 @@ export default function CaBoardAppClient({
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
           <Button
             variant="outline"
-            disabled={safePage <= 1}
+            disabled={roster.page <= 1 || loading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             Previous
           </Button>
           <p className="text-sm text-slate-500">
-            Page {safePage} of {pageCount}
+            Page {roster.page} of {roster.pageCount}
           </p>
           <Button
             variant="outline"
-            disabled={safePage >= pageCount}
-            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            disabled={roster.page >= roster.pageCount || loading}
+            onClick={() =>
+              setPage((p) => Math.min(roster.pageCount, p + 1))
+            }
           >
             Next
           </Button>
