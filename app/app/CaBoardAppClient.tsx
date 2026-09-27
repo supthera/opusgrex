@@ -391,9 +391,6 @@ export default function CaBoardAppClient({
                   Name
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
-                  NPI
-                </th>
-                <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   Phone
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
@@ -404,6 +401,9 @@ export default function CaBoardAppClient({
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   Board city
+                </th>
+                <th className="whitespace-nowrap px-3 py-3 font-semibold">
+                  NPI
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   Match
@@ -484,9 +484,6 @@ function ClinicianRow({ row }: { row: CaBoardClinician }) {
           <div className="text-xs text-slate-500">{row.credential}</div>
         ) : null}
       </td>
-      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-600">
-        {row.npi}
-      </td>
       <td className="whitespace-nowrap px-3 py-2.5">
         {row.phone ? (
           <a
@@ -521,6 +518,9 @@ function ClinicianRow({ row }: { row: CaBoardClinician }) {
       </td>
       <td className="px-3 py-2.5 text-slate-600">
         {[row.boardCity, row.boardCounty].filter(Boolean).join(" · ") || "—"}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-600">
+        {row.npi}
       </td>
       <td className="px-3 py-2.5">
         <Badge
