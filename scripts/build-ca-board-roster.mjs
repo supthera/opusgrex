@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
- * Build CA recruiting roster for a board profession (OT or PT):
+ * Build CA recruiting roster for a board profession (OT, OTA, PT, PTA):
  * 1) California DCA public licensee file (source of truth)
  * 2) Enrich with NPPES (NPI, practice phone/address, Direct email when present)
  * 3) Emit rows with usable public contact for /app
  *
  * Usage:
- *   node scripts/build-ca-board-roster.mjs ot
- *   node scripts/build-ca-board-roster.mjs pt
+ *   node scripts/build-ca-board-roster.mjs ot|ota|pt|pta
  */
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
@@ -40,6 +39,21 @@ const PROFESSIONS = {
     boardName: "CA DCA / Board of Occupational Therapy",
     product: "CA active OT recruiting roster",
   },
+  ota: {
+    key: "ota",
+    label: "OTA",
+    plural: "OTAs",
+    licenseType: "Occupational Therapy Assistant",
+    boxFolder: "72555083458",
+    rawFile: "OccupationalTherapy_Data00.xls",
+    outFile: "ca-ota-roster.json",
+    taxonomyDescription: "Occupational Therapy Assistant",
+    // 224Z* = Occupational Therapy Assistant
+    taxonomyMatch: (code) =>
+      code === "224Z00000X" || String(code).startsWith("224Z"),
+    boardName: "CA DCA / Board of Occupational Therapy",
+    product: "CA active OTA recruiting roster",
+  },
   pt: {
     key: "pt",
     label: "PT",
@@ -53,6 +67,21 @@ const PROFESSIONS = {
     taxonomyMatch: (code) => String(code).startsWith("2251"),
     boardName: "CA DCA / Physical Therapy Board",
     product: "CA active PT recruiting roster",
+  },
+  pta: {
+    key: "pta",
+    label: "PTA",
+    plural: "PTAs",
+    licenseType: "Physical Therapist Assistant",
+    boxFolder: "72554178487",
+    rawFile: "PhysicalTherapy_Data00.xls",
+    outFile: "ca-pta-roster.json",
+    taxonomyDescription: "Physical Therapy Assistant",
+    // 2252* = Physical Therapy Assistant
+    taxonomyMatch: (code) =>
+      code === "225200000X" || String(code).startsWith("2252"),
+    boardName: "CA DCA / Physical Therapy Board",
+    product: "CA active PTA recruiting roster",
   },
 };
 
@@ -68,8 +97,8 @@ function normalizeLicense(value) {
   return String(value || "")
     .trim()
     .replace(/^0+/, "")
-    .replace(/^(OT|PTA|PT|OTR|RPT|DPT)[\s\-]*/i, "")
-    .replace(/[\s\-]*(OT|PTA|PT|OTR|RPT|DPT)$/i, "")
+    .replace(/^(COTA|OTA|OT|PTA|PT|OTR|RPT|DPT)[\s\-]*/i, "")
+    .replace(/[\s\-]*(COTA|OTA|OT|PTA|PT|OTR|RPT|DPT)$/i, "")
     .replace(/^0+/, "")
     .toUpperCase();
 }
@@ -609,7 +638,7 @@ async function main() {
     .toLowerCase();
   const prof = PROFESSIONS[key];
   if (!prof) {
-    console.error("Usage: node scripts/build-ca-board-roster.mjs <ot|pt>");
+    console.error("Usage: node scripts/build-ca-board-roster.mjs <ot|ota|pt|pta>");
     process.exit(1);
   }
 

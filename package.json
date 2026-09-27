@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "build:ca-ot": "node scripts/build-ca-ot-roster.mjs",
+    "build:ca-ota": "node scripts/build-ca-board-roster.mjs ota",
     "build:ca-pt": "node scripts/build-ca-pt-roster.mjs",
+    "build:ca-pta": "node scripts/build-ca-board-roster.mjs pta",
     "build:ca-board": "node scripts/build-ca-board-roster.mjs"
   },
   "dependencies": {

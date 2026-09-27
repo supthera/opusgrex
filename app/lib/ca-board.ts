@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type {
-  CaBoardClinician,
-  CaBoardRoster,
-  CaBoardStats,
-  CaBoardUnmatched,
-  CaProfession,
+import {
+  PROFESSION_META,
+  type CaBoardClinician,
+  type CaBoardRoster,
+  type CaBoardStats,
+  type CaBoardUnmatched,
+  type CaProfession,
 } from "@/app/lib/ca-board-types";
 
 export type {
@@ -16,7 +17,11 @@ export type {
   CaBoardUnmatched,
   CaProfession,
 } from "@/app/lib/ca-board-types";
-export { PROFESSION_META } from "@/app/lib/ca-board-types";
+export {
+  CA_PROFESSIONS,
+  PROFESSION_META,
+  parseProfession,
+} from "@/app/lib/ca-board-types";
 
 function normalizeStats(raw: Record<string, unknown>): CaBoardStats {
   return {
@@ -31,8 +36,7 @@ function normalizeStats(raw: Record<string, unknown>): CaBoardStats {
 export async function loadCaBoardRoster(
   profession: CaProfession
 ): Promise<CaBoardRoster> {
-  const file =
-    profession === "pt" ? "ca-pt-roster.json" : "ca-ot-roster.json";
+  const file = PROFESSION_META[profession].dataFile;
   const filePath = path.join(process.cwd(), "data", file);
   const raw = JSON.parse(await readFile(filePath, "utf8")) as Record<
     string,
