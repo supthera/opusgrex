@@ -1,0 +1,17 @@
+{
+  "tokenUrl": "https://www.dca.ca.gov/boxToken/getToken",
+  "sources": [
+    {
+      "rawFile": "OccupationalTherapy_Data00.xls",
+      "folderId": "72555083458",
+      "label": "Occupational Therapy Board",
+      "professions": ["ot", "ota"]
+    },
+    {
+      "rawFile": "PhysicalTherapy_Data00.xls",
+      "folderId": "72554178487",
+      "label": "Physical Therapy Board",
+      "professions": ["pt", "pta"]
+    }
+  ]
+}

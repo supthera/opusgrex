@@ -1,0 +1,204 @@
+name: Refresh CA board rosters
+
+# Keeps OT / OTA / PT / PTA recruiting data current when California DCA
+# drops a new public licensee file (or when a maintainer forces a rebuild).
+#
+# Strategy:
+#   1. Daily: cheap Box metadata check (file id / size / sha1 / modified_at)
+#   2. Rebuild only professions whose DCA source file changed
+#   3. Open a PR with updated JSON + raw files + source manifest
+#
+# Manual run: Actions → "Refresh CA board rosters" → Run workflow
+#   - force=true rebuilds all four even if Box metadata is unchanged
+#   - use_cache=true reuses local NPPES harvest caches (faster; CI has none by default)
+
+on:
+  schedule:
+    # DCA licensee files typically refresh overnight; check every weekday morning PT.
+    - cron: "0 15 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force rebuild all professions even if DCA sources look unchanged"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      use_cache:
+        description: "Reuse NPPES harvest caches if present (mainly for local/debug)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      professions:
+        description: "Optional comma list (ot,ota,pt,pta). Empty = auto from freshness / force"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: refresh-ca-rosters
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Check DCA + rebuild if needed
+    runs-on: ubuntu-latest
+    # Full NPPES ZIP harvest + name-pass can take a long time.
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Check DCA freshness
+        id: freshness
+        run: |
+          set -euo pipefail
+          python3 scripts/dca_freshness.py --write-report data/raw/dca-freshness-report.json | tee /tmp/freshness.json
+          NEEDS=$(python3 -c 'import json; print("true" if json.load(open("/tmp/freshness.json"))["needsRefresh"] else "false")')
+          PROFS=$(python3 -c 'import json; print(",".join(json.load(open("/tmp/freshness.json"))["professionsToRebuild"]))')
+          echo "needs_refresh=$NEEDS" >> "$GITHUB_OUTPUT"
+          echo "professions=$PROFS" >> "$GITHUB_OUTPUT"
+          echo "needs_refresh=$NEEDS"
+          echo "professions=$PROFS"
+
+      - name: Decide rebuild scope
+        id: scope
+        run: |
+          set -euo pipefail
+          FORCE="${{ github.event.inputs.force || 'false' }}"
+          MANUAL="${{ github.event.inputs.professions || '' }}"
+          AUTO="${{ steps.freshness.outputs.professions }}"
+
+          if [ -n "$MANUAL" ]; then
+            SCOPE="$MANUAL"
+          elif [ "$FORCE" = "true" ]; then
+            SCOPE="ot,ota,pt,pta"
+          else
+            SCOPE="$AUTO"
+          fi
+
+          if [ -z "$SCOPE" ] && [ "$FORCE" != "true" ]; then
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            echo "professions=" >> "$GITHUB_OUTPUT"
+            echo "No DCA changes detected — skipping rebuild."
+          else
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+            echo "professions=$SCOPE" >> "$GITHUB_OUTPUT"
+            echo "Will rebuild: $SCOPE"
+          fi
+
+      - name: Refresh rosters
+        if: steps.scope.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          ARGS=(node scripts/refresh-ca-rosters.mjs --force --professions "${{ steps.scope.outputs.professions }}")
+          if [ "${{ github.event.inputs.use_cache || 'false' }}" = "true" ]; then
+            ARGS+=(--use-cache)
+          fi
+          "${ARGS[@]}"
+
+      - name: Summarize for Actions UI
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## CA roster freshness"
+            echo ""
+            if [ -f data/raw/dca-freshness-report.json ]; then
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("data/raw/dca-freshness-report.json").read_text())
+          print(f"- Checked at: `{report['checkedAt']}`")
+          print(f"- Needs refresh: **{report['needsRefresh']}**")
+          print(f"- Professions to rebuild: `{', '.join(report['professionsToRebuild']) or 'none'}`")
+          print("")
+          for src in report["sources"]:
+              status = "STALE" if src["stale"] else "current"
+              reasons = ", ".join(src["changeReasons"]) if src["changeReasons"] else "—"
+              print(f"- **{src['label']}** (`{src['rawFile']}`): {status} (reasons: {reasons})")
+              live = src["live"]
+              print(f"  - live: id={live.get('fileId')} size={live.get('size')} modified={live.get('modifiedAt')}")
+          PY
+            fi
+            if [ -f data/raw/refresh-summary.json ]; then
+              echo ""
+              echo "### Rebuild summary"
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+          s = json.loads(Path("data/raw/refresh-summary.json").read_text())
+          print(f"- Rebuilt: `{', '.join(s.get('rebuilt') or []) or 'none'}`")
+          print(f"- Skipped: {s.get('skipped')}")
+          for key, after in (s.get("after") or {}).items():
+              before = (s.get("before") or {}).get(key) or {}
+              print(
+                  f"- **{key.upper()}**: boardActive {before.get('boardActive')}→{after.get('boardActive')}, "
+                  f"contactable {before.get('matchedWithContact')}→{after.get('matchedWithContact')}, "
+                  f"unmatched {before.get('unmatchedActiveBoard')}→{after.get('unmatchedActiveBoard')}"
+              )
+          PY
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open PR with refreshed data
+        if: steps.scope.outputs.rebuild == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: |
+            chore(data): refresh CA board rosters from latest DCA drop
+
+            Automated rebuild of OT/OTA/PT/PTA recruiting data after detecting
+            a new California DCA public licensee file (or a forced refresh).
+          title: "chore(data): refresh CA OT/OTA/PT/PTA rosters"
+          body: |
+            ## Automated CA roster refresh
+
+            This PR was opened by the **Refresh CA board rosters** workflow after
+            detecting a new California DCA licensee file drop (or a manual force run).
+
+            ### What changed
+            - Re-downloaded DCA public files under `data/raw/`
+            - Rebuilt `data/ca-{ot,ota,pt,pta}-roster.json` via NPPES enrichment
+            - Updated `data/raw/dca-source-manifest.json` fingerprints
+
+            ### Review checklist
+            - [ ] Stats in the workflow summary look sane (boardActive / contactable deltas)
+            - [ ] Spot-check a few license rows in `/app`
+            - [ ] Merge to ship the fresh data
+
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          branch: chore/refresh-ca-rosters
+          delete-branch: true
+          add-paths: |
+            data/ca-ot-roster.json
+            data/ca-ota-roster.json
+            data/ca-pt-roster.json
+            data/ca-pta-roster.json
+            data/raw/OccupationalTherapy_Data00.xls
+            data/raw/PhysicalTherapy_Data00.xls
+            data/raw/dca-source-manifest.json
