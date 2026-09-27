@@ -2,7 +2,6 @@
 
 import { ArrowRight, UserRound } from "lucide-react";
 import { motion } from "framer-motion";
-import Link from "next/link";
 
 import { AnimatedSection } from "@/app/components/AnimatedSection";
 import {
@@ -30,8 +29,6 @@ export default function Hero() {
             <div className="mt-10 flex flex-col gap-4 sm:flex-row">
               <Button
                 size="lg"
-                nativeButton={false}
-                render={<Link href="/clinicians" />}
                 className="h-12 bg-[#0F4C81] px-8 text-base text-white transition-all hover:scale-[1.02] hover:bg-[#0F4C81]/90"
               >
                 Hire Staff
@@ -39,8 +36,6 @@ export default function Hero() {
               <Button
                 size="lg"
                 variant="outline"
-                nativeButton={false}
-                render={<Link href="/#for-clinicians" />}
                 className="h-12 border-slate-300 px-8 text-base text-slate-700 transition-all hover:scale-[1.02] hover:bg-white"
               >
                 Join as a Clinician

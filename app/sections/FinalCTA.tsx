@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import { AnimatedSection } from "@/app/components/AnimatedSection";
 import { Button } from "@/components/ui/button";
 
@@ -20,8 +18,6 @@ export default function FinalCTA() {
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Button
               size="lg"
-              nativeButton={false}
-              render={<Link href="/clinicians" />}
               className="h-12 bg-white px-8 text-base text-[#0F4C81] transition-all hover:scale-[1.02] hover:bg-white/90"
             >
               Hire Staff
@@ -29,8 +25,6 @@ export default function FinalCTA() {
             <Button
               size="lg"
               variant="outline"
-              nativeButton={false}
-              render={<Link href="/#for-clinicians" />}
               className="h-12 border-white/30 bg-transparent px-8 text-base text-white transition-all hover:scale-[1.02] hover:bg-white/10"
             >
               Join as a Clinician

@@ -13,12 +13,11 @@ import {
 } from "lucide-react";
 
 export const navLinks = [
-  { label: "Clinicians", href: "/clinicians" },
-  { label: "Product", href: "/#product" },
-  { label: "How It Works", href: "/#how-it-works" },
-  { label: "For Clinicians", href: "/#for-clinicians" },
-  { label: "For Employers", href: "/#for-employers" },
-  { label: "Pricing", href: "/#pricing" },
+  { label: "Product", href: "#product" },
+  { label: "How It Works", href: "#how-it-works" },
+  { label: "For Clinicians", href: "#for-clinicians" },
+  { label: "For Employers", href: "#for-employers" },
+  { label: "Pricing", href: "#pricing" },
 ] as const;
 
 export const partnerBadges = [
@@ -237,11 +236,11 @@ export const facilityCards = [
 
 export const footerLinks = {
   product: [
-    { label: "Clinicians", href: "/clinicians" },
-    { label: "Features", href: "/#product" },
-    { label: "How It Works", href: "/#how-it-works" },
-    { label: "Pricing", href: "/#pricing" },
-    { label: "Security", href: "/#security" },
+    { label: "Features", href: "#product" },
+    { label: "How It Works", href: "#how-it-works" },
+    { label: "Pricing", href: "#pricing" },
+    { label: "Security", href: "#security" },
+    { label: "CA OT App", href: "/app" },
   ],
   company: [
     { label: "About", href: "#" },
