@@ -200,11 +200,26 @@ async function fetchNppesPage(prof, { postalPrefix, skip }) {
   url.searchParams.set("postal_code", `${postalPrefix}*`);
   url.searchParams.set("limit", "200");
   url.searchParams.set("skip", String(skip));
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`NPPES ${res.status} for ${postalPrefix} skip=${skip}`);
+  let lastErr;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (res.status === 403 || res.status === 429) {
+        const wait = 1000 * 2 ** attempt;
+        await new Promise((r) => setTimeout(r, wait));
+        lastErr = new Error(`NPPES ${res.status} for ${postalPrefix} skip=${skip}`);
+        continue;
+      }
+      if (!res.ok) {
+        throw new Error(`NPPES ${res.status} for ${postalPrefix} skip=${skip}`);
+      }
+      return res.json();
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    }
   }
-  return res.json();
+  throw lastErr || new Error("NPPES fetch failed");
 }
 
 async function mapPool(items, concurrency, worker) {
@@ -271,7 +286,7 @@ async function harvestNppes(prof) {
 
   console.log(`NPPES harvest: ${tasks.length} page requests…`);
   let done = 0;
-  await mapPool(tasks, 8, async (task) => {
+  await mapPool(tasks, 4, async (task) => {
     try {
       const data = await fetchNppesPage(prof, task);
       for (const row of data.results || []) {
