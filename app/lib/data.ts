@@ -240,6 +240,7 @@ export const footerLinks = {
     { label: "How It Works", href: "#how-it-works" },
     { label: "Pricing", href: "#pricing" },
     { label: "Security", href: "#security" },
+    { label: "CA OT App", href: "/app" },
   ],
   company: [
     { label: "About", href: "#" },

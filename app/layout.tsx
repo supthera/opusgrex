@@ -1,21 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, Source_Serif_4 } from "next/font/google";
-
-import Footer from "@/app/components/Footer";
-import Navbar from "@/app/components/Navbar";
 
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-const sourceSerif = Source_Serif_4({
-  variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "OpusGrex — Hire Verified Clinical Talent, Nationwide",
@@ -29,11 +14,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${sourceSerif.variable} h-full scroll-smooth antialiased`}>
+    <html lang="en" className="h-full scroll-smooth antialiased">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className="min-h-full bg-[#FAF9F6] font-sans text-slate-600">
-        <Navbar />
         {children}
-        <Footer />
       </body>
     </html>
   );
