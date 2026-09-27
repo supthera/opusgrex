@@ -6,7 +6,7 @@ export const dynamic = "force-static";
 
 export async function GET() {
   try {
-    const roster = await loadCaBoardRoster("ot");
+    const roster = await loadCaBoardRoster("pt");
     return NextResponse.json(
       {
         generatedAt: roster.generatedAt,
@@ -26,7 +26,7 @@ export async function GET() {
     );
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to load CA OT roster";
+      error instanceof Error ? error.message : "Failed to load CA PT roster";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

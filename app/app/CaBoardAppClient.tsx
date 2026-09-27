@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Download,
   LoaderCircle,
@@ -12,15 +13,26 @@ import {
   Users,
 } from "lucide-react";
 
-import type { CaOtClinician, CaOtRoster } from "@/app/lib/ca-ot";
+import {
+  PROFESSION_META,
+  type CaBoardClinician,
+  type CaBoardRoster,
+  type CaBoardUnmatched,
+  type CaProfession,
+} from "@/app/lib/ca-board-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 50;
 
 type RosterPayload = Pick<
-  CaOtRoster,
-  "generatedAt" | "disclaimer" | "stats" | "clinicians"
+  CaBoardRoster,
+  | "generatedAt"
+  | "disclaimer"
+  | "stats"
+  | "clinicians"
+  | "profession"
+  | "unmatchedBoard"
 > & {
   backlogNoContactCount?: number;
 };
@@ -53,7 +65,7 @@ function csvEscape(value: string | null | undefined) {
   return s;
 }
 
-function downloadCsv(rows: CaOtClinician[]) {
+function downloadCsv(rows: CaBoardClinician[], profession: CaProfession) {
   const headers = [
     "licenseNumber",
     "displayName",
@@ -84,12 +96,56 @@ function downloadCsv(rows: CaOtClinician[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `opusgrex-ca-ot-contactable-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `${PROFESSION_META[profession].csvPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-export default function CaOtAppClient() {
+function downloadBacklogCsv(
+  rows: CaBoardUnmatched[],
+  profession: CaProfession
+) {
+  const headers = [
+    "licenseNumber",
+    "displayName",
+    "licenseStatus",
+    "licenseType",
+    "expirationDate",
+    "boardCity",
+    "boardCounty",
+    "boardState",
+    "boardZip",
+  ];
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) => {
+      const record = r as unknown as Record<string, string | null | undefined>;
+      return headers.map((h) => csvEscape(String(record[h] ?? ""))).join(",");
+    }),
+  ];
+  const blob = new Blob([lines.join("\n")], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${PROFESSION_META[profession].backlogCsvPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export default function CaBoardAppClient({
+  initialProfession = "ot",
+}: {
+  initialProfession?: CaProfession;
+}) {
+  const searchParams = useSearchParams();
+  const profession: CaProfession =
+    searchParams.get("profession") === "pt"
+      ? "pt"
+      : searchParams.get("profession") === "ot"
+        ? "ot"
+        : initialProfession;
   const [roster, setRoster] = useState<RosterPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,20 +160,28 @@ export default function CaOtAppClient() {
   const [county, setCounty] = useState("all");
   const [page, setPage] = useState(1);
 
+  const meta = PROFESSION_META[profession];
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch("/api/ca-ot");
+        setError(null);
+        const res = await fetch(PROFESSION_META[profession].apiPath);
         if (!res.ok) throw new Error(`Failed to load roster (${res.status})`);
         const data = (await res.json()) as RosterPayload;
         if (!cancelled) {
           setRoster(data);
-          setError(null);
+          setQuery("");
+          setConfidence("all");
+          setContact("all");
+          setCounty("all");
+          setPage(1);
         }
       } catch (e) {
         if (!cancelled) {
+          setRoster(null);
           setError(e instanceof Error ? e.message : "Failed to load roster");
         }
       } finally {
@@ -127,7 +191,7 @@ export default function CaOtAppClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profession]);
 
   const counties = useMemo(() => {
     if (!roster) return [];
@@ -143,10 +207,10 @@ export default function CaOtAppClient() {
     const q = query.trim().toLowerCase();
     return roster.clinicians.filter((c) => {
       if (confidence !== "all" && c.matchConfidence !== confidence) return false;
-      if (county !== "all" && c.boardCounty !== county) return false;
       if (contact === "phone" && !c.phone) return false;
       if (contact === "email" && !c.email) return false;
       if (contact === "both" && !(c.phone && c.email)) return false;
+      if (county !== "all" && c.boardCounty !== county) return false;
       if (!q) return true;
       const hay = [
         c.displayName,
@@ -157,6 +221,7 @@ export default function CaOtAppClient() {
         c.practiceCity,
         c.boardCity,
         c.boardCounty,
+        c.credential,
       ]
         .filter(Boolean)
         .join(" ")
@@ -174,17 +239,21 @@ export default function CaOtAppClient() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-20 text-slate-600 shadow-sm">
+      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-slate-600 shadow-sm">
         <LoaderCircle className="size-5 animate-spin text-[#0F4C81]" />
-        Loading CA OT roster…
+        Loading California {meta.shortTitle.toLowerCase()}…
       </div>
     );
   }
 
   if (error || !roster) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
-        {error || "Roster unavailable."}
+      <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800">
+        {error || "Roster unavailable."} Run{" "}
+        <code className="rounded bg-red-100 px-1">
+          npm run build:ca-{profession}
+        </code>{" "}
+        if the data file is missing.
       </div>
     );
   }
@@ -194,6 +263,12 @@ export default function CaOtAppClient() {
   const high = roster.clinicians.filter(
     (c) => c.matchConfidence === "high"
   ).length;
+  const matchRate =
+    roster.stats.boardActive > 0
+      ? Math.round(
+          (roster.stats.matchedWithContact / roster.stats.boardActive) * 100
+        )
+      : 0;
 
   return (
     <div className="space-y-8">
@@ -203,19 +278,19 @@ export default function CaOtAppClient() {
         {new Date(roster.generatedAt).toLocaleString("en-US", {
           timeZone: "America/Los_Angeles",
         })}{" "}
-        PT.
+        Pacific.
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Board-active OTs"
-          value={roster.stats.boardActiveOt.toLocaleString()}
-          hint="CA DCA Current Occupational Therapist"
+          label={`Board-active ${meta.plural}`}
+          value={roster.stats.boardActive.toLocaleString()}
+          hint={meta.boardHint}
         />
         <StatCard
           label="With public contact"
           value={roster.stats.matchedWithContact.toLocaleString()}
-          hint="Primary table — phone and/or email via NPPES"
+          hint={`${matchRate}% of board-active · phone and/or email via NPPES`}
         />
         <StatCard
           label="Phone / email"
@@ -305,18 +380,35 @@ export default function CaOtAppClient() {
             type="button"
             variant="outline"
             className="h-10 gap-2"
-            onClick={() => downloadCsv(filtered)}
+            onClick={() => downloadCsv(filtered, profession)}
             disabled={filtered.length === 0}
           >
             <Download className="size-4" />
             CSV
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-2"
+            onClick={() =>
+              downloadBacklogCsv(roster.unmatchedBoard ?? [], profession)
+            }
+            disabled={!roster.unmatchedBoard?.length}
+            title="Board-active Current licenses not yet matched to NPPES"
+          >
+            <Download className="size-4" />
+            Unmatched backlog
+          </Button>
         </div>
         <p className="mt-3 text-sm text-slate-500">
           Showing {filtered.length.toLocaleString()} of{" "}
-          {roster.clinicians.length.toLocaleString()} contactable rows ·{" "}
-          {roster.stats.unmatchedActiveBoard.toLocaleString()} board-active OTs
-          not yet matched to NPPES (excluded from table).
+          {roster.clinicians.length.toLocaleString()} contactable rows (filters
+          applied). Funnel:{" "}
+          {roster.stats.boardActive.toLocaleString()} board-active Current →{" "}
+          {roster.stats.matchedWithContact.toLocaleString()} matched to NPPES
+          with phone/email →{" "}
+          {roster.stats.unmatchedActiveBoard.toLocaleString()} still unmatched
+          to NPPES (excluded — no reliable public contact yet).
         </p>
       </div>
 
@@ -324,7 +416,7 @@ export default function CaOtAppClient() {
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
           <Table2 className="size-4 text-[#0F4C81]" />
           <h2 className="font-heading text-base font-semibold text-slate-900">
-            Contactable active California OTs
+            Contactable active California {meta.plural}
           </h2>
         </div>
         <div className="overflow-x-auto">
@@ -338,9 +430,6 @@ export default function CaOtAppClient() {
                   Name
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
-                  NPI
-                </th>
-                <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   Phone
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
@@ -351,6 +440,9 @@ export default function CaOtAppClient() {
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   Board city
+                </th>
+                <th className="whitespace-nowrap px-3 py-3 font-semibold">
+                  NPI
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   Match
@@ -419,7 +511,7 @@ export default function CaOtAppClient() {
   );
 }
 
-function ClinicianRow({ row }: { row: CaOtClinician }) {
+function ClinicianRow({ row }: { row: CaBoardClinician }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50/80">
       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-800">
@@ -430,9 +522,6 @@ function ClinicianRow({ row }: { row: CaOtClinician }) {
         {row.credential ? (
           <div className="text-xs text-slate-500">{row.credential}</div>
         ) : null}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-600">
-        {row.npi}
       </td>
       <td className="whitespace-nowrap px-3 py-2.5">
         {row.phone ? (
@@ -468,6 +557,9 @@ function ClinicianRow({ row }: { row: CaOtClinician }) {
       </td>
       <td className="px-3 py-2.5 text-slate-600">
         {[row.boardCity, row.boardCounty].filter(Boolean).join(" · ") || "—"}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-600">
+        {row.npi}
       </td>
       <td className="px-3 py-2.5">
         <Badge
