@@ -4,13 +4,17 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
 
-import type { CaProfession } from "@/app/lib/ca-board-types";
+import {
+  CA_PROFESSIONS,
+  parseProfession,
+  type CaProfession,
+} from "@/app/lib/ca-board-types";
 
 function ProfessionTabs() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const active = (searchParams.get("profession") === "pt" ? "pt" : "ot") as CaProfession;
+  const active = parseProfession(searchParams.get("profession"));
 
   const setProfession = useCallback(
     (next: CaProfession) => {
@@ -29,10 +33,7 @@ function ProfessionTabs() {
       role="tablist"
       aria-label="Profession"
     >
-      {([
-        { key: "ot", label: "OT" },
-        { key: "pt", label: "PT" },
-      ] as const).map(({ key, label }) => {
+      {CA_PROFESSIONS.map((key) => {
         const selected = active === key;
         return (
           <button
@@ -43,11 +44,11 @@ function ProfessionTabs() {
             onClick={() => setProfession(key)}
             className={
               selected
-                ? "rounded-md bg-[#0F4C81] px-3 py-1.5 text-xs font-semibold text-white"
-                : "rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-[#0F4C81]"
+                ? "rounded-md bg-[#0F4C81] px-2.5 py-1.5 text-xs font-semibold uppercase text-white"
+                : "rounded-md px-2.5 py-1.5 text-xs font-semibold uppercase text-slate-600 hover:text-[#0F4C81]"
             }
           >
-            {label}
+            {key}
           </button>
         );
       })}
@@ -64,7 +65,7 @@ export default function AppShellLayout({
     <div className="min-h-full">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-[#FAF9F6]/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-4 px-6 lg:px-8">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/app"
               className="font-heading text-lg font-semibold tracking-tight text-[#0F4C81]"
@@ -76,7 +77,7 @@ export default function AppShellLayout({
             </span>
             <Suspense
               fallback={
-                <div className="h-8 w-[88px] rounded-lg border border-slate-200 bg-white" />
+                <div className="h-8 w-[180px] rounded-lg border border-slate-200 bg-white" />
               }
             >
               <ProfessionTabs />
@@ -84,7 +85,7 @@ export default function AppShellLayout({
           </div>
           <Link
             href="/"
-            className="text-sm font-medium text-slate-500 transition-colors hover:text-[#0F4C81]"
+            className="shrink-0 text-sm font-medium text-slate-500 transition-colors hover:text-[#0F4C81]"
           >
             Marketing site
           </Link>

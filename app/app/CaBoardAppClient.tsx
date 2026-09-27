@@ -15,6 +15,7 @@ import {
 
 import {
   PROFESSION_META,
+  parseProfession,
   type CaBoardClinician,
   type CaBoardStats,
   type CaProfession,
@@ -92,12 +93,10 @@ export default function CaBoardAppClient({
   initialProfession?: CaProfession;
 }) {
   const searchParams = useSearchParams();
-  const profession: CaProfession =
-    searchParams.get("profession") === "pt"
-      ? "pt"
-      : searchParams.get("profession") === "ot"
-        ? "ot"
-        : initialProfession;
+  const profession: CaProfession = parseProfession(
+    searchParams.get("profession"),
+    initialProfession
+  );
 
   const [roster, setRoster] = useState<PagePayload | null>(null);
   const [error, setError] = useState<string | null>(null);

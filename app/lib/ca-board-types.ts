@@ -1,4 +1,6 @@
-export type CaProfession = "ot" | "pt";
+export type CaProfession = "ot" | "ota" | "pt" | "pta";
+
+export const CA_PROFESSIONS: CaProfession[] = ["ot", "ota", "pt", "pta"];
 
 export interface CaBoardClinician {
   licenseNumber: string;
@@ -74,6 +76,7 @@ export const PROFESSION_META: Record<
     apiPath: string;
     csvPrefix: string;
     backlogCsvPrefix: string;
+    dataFile: string;
   }
 > = {
   ot: {
@@ -84,6 +87,17 @@ export const PROFESSION_META: Record<
     apiPath: "/api/ca-ot",
     csvPrefix: "opusgrex-ca-ot-contactable",
     backlogCsvPrefix: "opusgrex-ca-ot-unmatched-backlog",
+    dataFile: "ca-ot-roster.json",
+  },
+  ota: {
+    label: "OTA",
+    plural: "OTAs",
+    shortTitle: "Occupational Therapy Assistants",
+    boardHint: "CA DCA / CBOT Current Occupational Therapy Assistant",
+    apiPath: "/api/ca-ota",
+    csvPrefix: "opusgrex-ca-ota-contactable",
+    backlogCsvPrefix: "opusgrex-ca-ota-unmatched-backlog",
+    dataFile: "ca-ota-roster.json",
   },
   pt: {
     label: "PT",
@@ -93,5 +107,26 @@ export const PROFESSION_META: Record<
     apiPath: "/api/ca-pt",
     csvPrefix: "opusgrex-ca-pt-contactable",
     backlogCsvPrefix: "opusgrex-ca-pt-unmatched-backlog",
+    dataFile: "ca-pt-roster.json",
+  },
+  pta: {
+    label: "PTA",
+    plural: "PTAs",
+    shortTitle: "Physical Therapist Assistants",
+    boardHint: "CA DCA / PT Board Current Physical Therapist Assistant",
+    apiPath: "/api/ca-pta",
+    csvPrefix: "opusgrex-ca-pta-contactable",
+    backlogCsvPrefix: "opusgrex-ca-pta-unmatched-backlog",
+    dataFile: "ca-pta-roster.json",
   },
 };
+
+export function parseProfession(
+  value: string | null | undefined,
+  fallback: CaProfession = "ot"
+): CaProfession {
+  if (value === "ota" || value === "pt" || value === "pta" || value === "ot") {
+    return value;
+  }
+  return fallback;
+}
