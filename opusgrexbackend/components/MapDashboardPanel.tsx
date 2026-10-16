@@ -9,6 +9,8 @@ import { useMobileDetection } from '@/mobile/hooks/useMobileDetection';
 interface MapDashboardPanelProps {
   onStateClick?: (stateCode: string | null) => void;
   expandedStates?: Set<string>;
+  selectedSpecialty?: string;
+  onSpecialtyChange?: (specialty: string) => void;
 }
 
 // Default dimensions for each panel - PERMANENTLY SET BY USER
@@ -103,7 +105,12 @@ const metricFlagStyle: React.CSSProperties = {
   boxShadow: 'none',
 };
 
-export default React.memo(function MapDashboardPanel({ onStateClick, expandedStates }: MapDashboardPanelProps) {
+export default React.memo(function MapDashboardPanel({
+  onStateClick,
+  expandedStates,
+  selectedSpecialty = '',
+  onSpecialtyChange,
+}: MapDashboardPanelProps) {
   const [selectedState, setSelectedState] = useState<string | null>(null);
   const [hoveredState, setHoveredState] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -248,6 +255,9 @@ export default React.memo(function MapDashboardPanel({ onStateClick, expandedSta
 
   // Load clinician counts from static JSON files
   const [countsByState, setCountsByState] = useState<{ [state: string]: number }>({});
+  const [specialtyCountsByState, setSpecialtyCountsByState] = useState<Record<string, Record<string, number>>>({});
+  const [nationalSpecialtyCounts, setNationalSpecialtyCounts] = useState<Record<string, number>>({});
+  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([]);
   const [totalClinicians, setTotalClinicians] = useState<number | null>(null);
   const [loadingCounts, setLoadingCounts] = useState<boolean>(true);
   const [lastModified, setLastModified] = useState<string | null>(null);
@@ -276,14 +286,26 @@ export default React.memo(function MapDashboardPanel({ onStateClick, expandedSta
 
         // Extract clinician counts by state
         const counts: { [state: string]: number } = {};
+        const specialtyByState: Record<string, Record<string, number>> = {};
+        const nationalBySpecialty: Record<string, number> = {};
+        const specialtySet = new Set<string>();
         const states = stateStats.states || {};
         Object.entries(states).forEach(([stateCode, stateData]: [string, any]) => {
           if (typeof stateData.totalClinicians === 'number') {
             counts[stateCode] = stateData.totalClinicians;
           }
+          const byTaxonomy = (stateData.byTaxonomy || {}) as Record<string, number>;
+          specialtyByState[stateCode] = byTaxonomy;
+          Object.entries(byTaxonomy).forEach(([specialty, count]) => {
+            specialtySet.add(specialty);
+            nationalBySpecialty[specialty] = (nationalBySpecialty[specialty] || 0) + (count || 0);
+          });
         });
 
         setCountsByState(counts);
+        setSpecialtyCountsByState(specialtyByState);
+        setNationalSpecialtyCounts(nationalBySpecialty);
+        setSpecialtyOptions(Array.from(specialtySet).sort((a, b) => a.localeCompare(b)));
         setTotalClinicians(
           typeof stateStats.meta?.totalClinicians === 'number'
             ? stateStats.meta.totalClinicians
@@ -299,6 +321,16 @@ export default React.memo(function MapDashboardPanel({ onStateClick, expandedSta
     }
     loadClinicianCounts();
   }, []);
+
+  const selectedStateTotal = displayState
+    ? (selectedSpecialty
+      ? (specialtyCountsByState[displayState]?.[selectedSpecialty] ?? 0)
+      : (countsByState[displayState] ?? 0))
+    : null;
+
+  const nationalTotal = selectedSpecialty
+    ? (nationalSpecialtyCounts[selectedSpecialty] ?? 0)
+    : totalClinicians;
 
   return (
     <div className="map-dashboard-page">
@@ -369,8 +401,8 @@ export default React.memo(function MapDashboardPanel({ onStateClick, expandedSta
                 {loadingCounts
                   ? 'Loading...'
                   : displayState
-                    ? (countsByState[displayState] ?? 0).toLocaleString()
-                    : (totalClinicians !== null ? totalClinicians.toLocaleString() : '—')}
+                    ? selectedStateTotal!.toLocaleString()
+                    : (nationalTotal !== null ? nationalTotal.toLocaleString() : '—')}
               </span>
               {displayState && (
                 <Image
@@ -397,6 +429,32 @@ export default React.memo(function MapDashboardPanel({ onStateClick, expandedSta
               <span className="map-dashboard-metric-value" style={{ color: '#a8d5a8' }}>
                 {loadingCounts ? 'Loading...' : (lastModified || '—')}
               </span>
+            </div>
+
+            <div className="map-dashboard-metric">
+              <span className="map-dashboard-metric-label">Specialty</span>
+              <select
+                value={selectedSpecialty}
+                onChange={(e) => onSpecialtyChange?.(e.target.value)}
+                style={{
+                  marginTop: '0.35rem',
+                  width: '100%',
+                  backgroundColor: '#1a1a1a',
+                  border: '1px solid #4d4d4d',
+                  color: '#e5e7eb',
+                  borderRadius: '4px',
+                  padding: '0.35rem 0.5rem',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                }}
+              >
+                <option value="">All specialties</option>
+                {specialtyOptions.map((specialty) => (
+                  <option key={specialty} value={specialty}>
+                    {specialty}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </aside>

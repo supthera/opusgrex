@@ -211,7 +211,13 @@ export default function CaBoardAppClient({
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label={`Board-active ${meta.plural}`}
+          label={
+            profession === "lvn" || profession === "rn"
+              ? `NPPES ${meta.plural}`
+              : profession === "all"
+                ? "In these rosters"
+                : `Board-active ${meta.plural}`
+          }
           value={roster.stats.boardActive.toLocaleString()}
           hint={meta.boardHint}
         />
@@ -322,7 +328,13 @@ export default function CaBoardAppClient({
         <p className="mt-3 text-sm text-slate-500">
           Showing page {roster.page} · {roster.total.toLocaleString()}{" "}
           contactable after filters ·{" "}
-          {roster.stats.boardActive.toLocaleString()} board-active Current ·{" "}
+          {roster.stats.boardActive.toLocaleString()}{" "}
+          {profession === "lvn" || profession === "rn"
+            ? "NPPES-enumerated"
+            : profession === "all"
+              ? "in the combined rosters"
+              : "board-active Current"}{" "}
+          ·{" "}
           {roster.unmatchedCount.toLocaleString()} unmatched (excluded from
           table).
           {loading ? " Updating…" : null}
@@ -340,6 +352,11 @@ export default function CaBoardAppClient({
           <table className="min-w-full border-collapse text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                {profession === "all" ? (
+                  <th className="whitespace-nowrap px-3 py-3 font-semibold">
+                    Profession
+                  </th>
+                ) : null}
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
                   License #
                 </th>
@@ -371,12 +388,16 @@ export default function CaBoardAppClient({
             </thead>
             <tbody>
               {roster.clinicians.map((row) => (
-                <ClinicianRow key={row.licenseNumber} row={row} />
+                <ClinicianRow
+                  key={`${row.profession ?? profession}-${row.licenseNumber}-${row.npi}`}
+                  row={row}
+                  showProfession={profession === "all"}
+                />
               ))}
               {roster.clinicians.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={profession === "all" ? 10 : 9}
                     className="px-4 py-12 text-center text-slate-500"
                   >
                     No rows match these filters.
@@ -430,9 +451,22 @@ export default function CaBoardAppClient({
   );
 }
 
-function ClinicianRow({ row }: { row: CaBoardClinician }) {
+function ClinicianRow({
+  row,
+  showProfession,
+}: {
+  row: CaBoardClinician;
+  showProfession: boolean;
+}) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50/80">
+      {showProfession ? (
+        <td className="whitespace-nowrap px-3 py-2.5">
+          <Badge variant="secondary" className="bg-[#0F4C81]/10 text-[#0F4C81]">
+            {row.profession ? PROFESSION_META[row.profession].label : "—"}
+          </Badge>
+        </td>
+      ) : null}
       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-800">
         {row.licenseNumber}
       </td>

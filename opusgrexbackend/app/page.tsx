@@ -167,11 +167,9 @@ async function buildStateList(): Promise<StateEntry[]> {
 export default function HomePage() {
   const [expandedStates, setExpandedStates] = useState<Set<string>>(new Set());
   const [stateList, setStateList] = useState<StateEntry[]>([]);
-  const [selectedSpecialtyByState, setSelectedSpecialtyByState] = useState<
-    Record<string, string>
-  >({});
-  const [filteredCountByState, setFilteredCountByState] = useState<
-    Record<string, number>
+  const [mapSpecialty, setMapSpecialty] = useState('');
+  const [specialtyCountsByState, setSpecialtyCountsByState] = useState<
+    Record<string, Record<string, number>>
   >({});
   const [cliniciansByState, setCliniciansByState] = useState<
     Record<string, Clinician[]>
@@ -182,6 +180,21 @@ export default function HomePage() {
 
   useEffect(() => {
     buildStateList().then(setStateList);
+  }, []);
+
+  useEffect(() => {
+    fetch('/data/stateStats.json')
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Failed to load stateStats'))))
+      .then((stateStats) => {
+        const specialtyByState: Record<string, Record<string, number>> = {};
+        Object.entries(stateStats.states || {}).forEach(
+          ([stateCode, stateData]: [string, { byTaxonomy?: Record<string, number> }]) => {
+            specialtyByState[stateCode] = stateData.byTaxonomy || {};
+          }
+        );
+        setSpecialtyCountsByState(specialtyByState);
+      })
+      .catch(() => setSpecialtyCountsByState({}));
   }, []);
 
   // Lazy-load a state's clinician shard the first time it's expanded.
@@ -277,6 +290,8 @@ export default function HomePage() {
             <MapDashboardPanel
               onStateClick={handleStateClick}
               expandedStates={expandedStates}
+              selectedSpecialty={mapSpecialty}
+              onSpecialtyChange={setMapSpecialty}
             />
           </div>
         </div>
@@ -290,12 +305,13 @@ export default function HomePage() {
             const isExpanded = expandedStates.has(stateData.state);
             const status = shardStatus[stateData.state] ?? "idle";
             const clinicians = cliniciansByState[stateData.state] ?? [];
-            const selectedSpecialty =
-              selectedSpecialtyByState[stateData.state] ?? "";
-            const displayedCount =
-              isExpanded && selectedSpecialty
-                ? filteredCountByState[stateData.state] ?? stateData.count
-                : stateData.count;
+            const panelClinicians = mapSpecialty
+              ? clinicians.filter((c) => c.taxonomyLabel === mapSpecialty)
+              : clinicians;
+            const displayedCount = mapSpecialty
+              ? (specialtyCountsByState[stateData.state]?.[mapSpecialty] ??
+                (status === "loaded" ? panelClinicians.length : stateData.count))
+              : stateData.count;
             return (
               <div
                 key={stateData.state}
@@ -431,22 +447,7 @@ export default function HomePage() {
 
                       {status === "loaded" && (
                         <>
-                          <ClinicianTable
-                            clinicians={clinicians}
-                            selectedSpecialty={selectedSpecialty}
-                            onSpecialtyChange={(specialty) =>
-                              setSelectedSpecialtyByState((prev) => ({
-                                ...prev,
-                                [stateData.state]: specialty,
-                              }))
-                            }
-                            onFilteredCountChange={(count) =>
-                              setFilteredCountByState((prev) => ({
-                                ...prev,
-                                [stateData.state]: count,
-                              }))
-                            }
-                          />
+                          <ClinicianTable clinicians={panelClinicians} />
                           <div
                             style={{
                               display: "flex",

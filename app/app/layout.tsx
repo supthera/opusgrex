@@ -6,6 +6,7 @@ import { Suspense, useCallback } from "react";
 
 import {
   CA_PROFESSIONS,
+  PROFESSION_META,
   parseProfession,
   type CaProfession,
 } from "@/app/lib/ca-board-types";
@@ -29,7 +30,7 @@ function ProfessionTabs() {
 
   return (
     <div
-      className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5"
+      className="flex max-w-full items-center overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5"
       role="tablist"
       aria-label="Profession"
     >
@@ -44,11 +45,11 @@ function ProfessionTabs() {
             onClick={() => setProfession(key)}
             className={
               selected
-                ? "rounded-md bg-[#0F4C81] px-2.5 py-1.5 text-xs font-semibold uppercase text-white"
-                : "rounded-md px-2.5 py-1.5 text-xs font-semibold uppercase text-slate-600 hover:text-[#0F4C81]"
+                ? "rounded-md bg-[#0F4C81] px-2.5 py-1.5 text-xs font-semibold uppercase whitespace-nowrap text-white"
+                : "rounded-md px-2.5 py-1.5 text-xs font-semibold uppercase whitespace-nowrap text-slate-600 hover:text-[#0F4C81]"
             }
           >
-            {key}
+            {PROFESSION_META[key].label}
           </button>
         );
       })}
@@ -73,11 +74,11 @@ export default function AppShellLayout({
               OpusGrex
             </Link>
             <span className="hidden rounded-md bg-[#0F4C81]/10 px-2 py-0.5 text-xs font-medium text-[#0F4C81] sm:inline">
-              CA recruiting
+              California
             </span>
             <Suspense
               fallback={
-                <div className="h-8 w-[180px] rounded-lg border border-slate-200 bg-white" />
+                <div className="h-8 w-[320px] rounded-lg border border-slate-200 bg-white" />
               }
             >
               <ProfessionTabs />

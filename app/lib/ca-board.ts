@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   PROFESSION_META,
+  ROSTER_PROFESSIONS,
   type CaBoardClinician,
   type CaBoardRoster,
   type CaBoardStats,
@@ -33,8 +34,10 @@ function normalizeStats(raw: Record<string, unknown>): CaBoardStats {
   };
 }
 
-export async function loadCaBoardRoster(
-  profession: CaProfession
+const rosterCache = new Map<CaProfession, Promise<CaBoardRoster>>();
+
+async function readRosterFile(
+  profession: Exclude<CaProfession, "all">
 ): Promise<CaBoardRoster> {
   const file = PROFESSION_META[profession].dataFile;
   const filePath = path.join(process.cwd(), "data", file);
@@ -42,15 +45,73 @@ export async function loadCaBoardRoster(
     string,
     unknown
   >;
+  const clinicians = ((raw.clinicians as CaBoardClinician[]) || []).map(
+    (clinician) => ({ ...clinician, profession })
+  );
   return {
     generatedAt: String(raw.generatedAt),
-    profession: (raw.profession as CaProfession) || profession,
+    profession,
     product: String(raw.product ?? ""),
     disclaimer: String(raw.disclaimer ?? ""),
     stats: normalizeStats((raw.stats as Record<string, unknown>) || {}),
-    clinicians: (raw.clinicians as CaBoardClinician[]) || [],
+    clinicians,
     backlogNoContactSample:
       (raw.backlogNoContactSample as CaBoardClinician[]) || [],
     unmatchedBoard: (raw.unmatchedBoard as CaBoardUnmatched[]) || [],
   };
+}
+
+async function loadMergedRoster(): Promise<CaBoardRoster> {
+  const rosters = await Promise.all(
+    ROSTER_PROFESSIONS.map((profession) => loadCaBoardRoster(profession))
+  );
+  const stats: CaBoardStats = {
+    boardActive: 0,
+    nppesHarvested: 0,
+    matchedWithContact: 0,
+    matchedNoContact: 0,
+    unmatchedActiveBoard: 0,
+  };
+  const clinicians: CaBoardClinician[] = [];
+  const unmatchedBoard: CaBoardUnmatched[] = [];
+
+  for (const roster of rosters) {
+    stats.boardActive += roster.stats.boardActive;
+    stats.nppesHarvested += roster.stats.nppesHarvested;
+    stats.matchedWithContact += roster.stats.matchedWithContact;
+    stats.matchedNoContact += roster.stats.matchedNoContact;
+    stats.unmatchedActiveBoard += roster.stats.unmatchedActiveBoard;
+    clinicians.push(...roster.clinicians);
+    unmatchedBoard.push(...(roster.unmatchedBoard ?? []));
+  }
+
+  const generatedAt =
+    rosters
+      .map((roster) => roster.generatedAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1) || new Date().toISOString();
+
+  return {
+    generatedAt,
+    profession: "all",
+    product: "Combined California recruiting roster",
+    disclaimer:
+      "Combined contactable California clinicians: DCA board files for OT, OTA, PT, and PTA, plus NPPES practice listings for RN and LVN.",
+    stats,
+    clinicians,
+    unmatchedBoard,
+  };
+}
+
+export function loadCaBoardRoster(
+  profession: CaProfession
+): Promise<CaBoardRoster> {
+  const cached = rosterCache.get(profession);
+  if (cached) return cached;
+
+  const pending =
+    profession === "all" ? loadMergedRoster() : readRosterFile(profession);
+  rosterCache.set(profession, pending);
+  return pending;
 }

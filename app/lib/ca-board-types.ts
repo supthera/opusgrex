@@ -1,6 +1,23 @@
-export type CaProfession = "ot" | "ota" | "pt" | "pta";
+export type CaProfession =
+  | "all"
+  | "ot"
+  | "ota"
+  | "pt"
+  | "pta"
+  | "lvn"
+  | "rn";
 
-export const CA_PROFESSIONS: CaProfession[] = ["ot", "ota", "pt", "pta"];
+/** Professions that have their own roster file. "all" is the combined view. */
+export const ROSTER_PROFESSIONS: Exclude<CaProfession, "all">[] = [
+  "ot",
+  "ota",
+  "pt",
+  "pta",
+  "lvn",
+  "rn",
+];
+
+export const CA_PROFESSIONS: CaProfession[] = ["all", ...ROSTER_PROFESSIONS];
 
 export interface CaBoardClinician {
   licenseNumber: string;
@@ -24,6 +41,8 @@ export interface CaBoardClinician {
   taxonomyDesc: string | null;
   matchConfidence: "high" | "medium" | string;
   matchMethod: string;
+  /** Set on combined results so a row can show which roster it came from. */
+  profession?: Exclude<CaProfession, "all">;
   source: {
     board: string;
     enrichment: string;
@@ -119,13 +138,51 @@ export const PROFESSION_META: Record<
     backlogCsvPrefix: "opusgrex-ca-pta-unmatched-backlog",
     dataFile: "ca-pta-roster.json",
   },
+  lvn: {
+    label: "LVN",
+    plural: "LVNs",
+    shortTitle: "Licensed Vocational Nurses",
+    boardHint: "NPPES California LVN / LPN taxonomy (164X, 164W)",
+    apiPath: "/api/ca-lvn",
+    csvPrefix: "opusgrex-ca-lvn-contactable",
+    backlogCsvPrefix: "opusgrex-ca-lvn-unmatched-backlog",
+    dataFile: "ca-lvn-roster.json",
+  },
+  rn: {
+    label: "RN",
+    plural: "RNs",
+    shortTitle: "Registered Nurses",
+    boardHint: "NPPES California RN taxonomy (163W)",
+    apiPath: "/api/ca-rn",
+    csvPrefix: "opusgrex-ca-rn-contactable",
+    backlogCsvPrefix: "opusgrex-ca-rn-unmatched-backlog",
+    dataFile: "ca-rn-roster.json",
+  },
+  all: {
+    label: "All",
+    plural: "clinicians",
+    shortTitle: "All professions",
+    boardHint: "OT, OTA, PT, PTA, LVN, and RN",
+    apiPath: "/api/ca-all",
+    csvPrefix: "opusgrex-ca-all-contactable",
+    backlogCsvPrefix: "opusgrex-ca-all-unmatched-backlog",
+    dataFile: "",
+  },
 };
 
 export function parseProfession(
   value: string | null | undefined,
   fallback: CaProfession = "ot"
 ): CaProfession {
-  if (value === "ota" || value === "pt" || value === "pta" || value === "ot") {
+  if (
+    value === "all" ||
+    value === "ot" ||
+    value === "ota" ||
+    value === "pt" ||
+    value === "pta" ||
+    value === "lvn" ||
+    value === "rn"
+  ) {
     return value;
   }
   return fallback;

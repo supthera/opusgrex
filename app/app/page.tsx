@@ -8,9 +8,9 @@ import {
 } from "@/app/lib/ca-board-types";
 
 export const metadata: Metadata = {
-  title: "CA OT / OTA / PT / PTA Recruiting App — OpusGrex",
+  title: "CA Clinician Recruiting App — OpusGrex",
   description:
-    "Active California Occupational and Physical Therapists and Assistants from DCA boards, enriched with NPPES public contact info.",
+    "California OT, OTA, PT, PTA, LVN, and RN clinicians for recruiting, from DCA boards and NPPES public contact info.",
 };
 
 export default async function AppPage({
@@ -33,11 +33,27 @@ export default async function AppPage({
             California active {meta.plural}
           </h1>
           <p className="mt-3 text-base leading-relaxed text-slate-600">
-            Board-sourced <strong>Current</strong> {meta.shortTitle} from
-            California DCA, enriched with NPPES practice phone and email when
-            publicly listed. Use the{" "}
-            <strong>OT / OTA / PT / PTA</strong> switch in the header to change
-            profession.
+            {profession === "lvn" || profession === "rn" ? (
+              <>
+                NPPES practice listings for California{" "}
+                <strong>{meta.shortTitle}</strong> with a public phone. This
+                is not a board license-status file.
+              </>
+            ) : profession === "all" ? (
+              <>
+                Every contactable California clinician in this app: DCA{" "}
+                <strong>OT, OTA, PT, and PTA</strong> plus NPPES{" "}
+                <strong>LVN and RN</strong>.
+              </>
+            ) : (
+              <>
+                Board-sourced <strong>Current</strong> {meta.shortTitle} from
+                California DCA, enriched with NPPES practice phone and email
+                when publicly listed.
+              </>
+            )}{" "}
+            Use the <strong>All / OT / OTA / PT / PTA / LVN / RN</strong>{" "}
+            switch in the header to change profession.
           </p>
         </div>
 

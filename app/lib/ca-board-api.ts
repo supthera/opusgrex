@@ -42,6 +42,7 @@ function filterClinicians(
       c.boardCity,
       c.boardCounty,
       c.credential,
+      c.profession,
     ]
       .filter(Boolean)
       .join(" ")
@@ -111,9 +112,13 @@ export async function buildRosterResponse(
 
   if (query.export === "contactable") {
     const filtered = filterClinicians(roster.clinicians, query);
+    const headers =
+      profession === "all"
+        ? ["profession", ...CONTACTABLE_HEADERS]
+        : CONTACTABLE_HEADERS;
     const csv = toCsv(
       filtered as unknown as Array<Record<string, string | null | undefined>>,
-      CONTACTABLE_HEADERS
+      headers
     );
     return {
       kind: "csv" as const,

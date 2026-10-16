@@ -11,9 +11,6 @@ const ClinicianDetailModal = dynamic(() => import('./ClinicianDetailModal'), {
 
 interface ClinicianTableProps {
   clinicians: Clinician[];
-  selectedSpecialty?: string;
-  onSpecialtyChange?: (specialty: string) => void;
-  onFilteredCountChange?: (count: number) => void;
 }
 
 const INITIAL_BATCH_SIZE = 50;
@@ -34,41 +31,23 @@ function toTitleCase(text: string): string {
     .join(' ');
 }
 
-const GRID_COLUMNS = '1fr 1.35fr 0.95fr 1.15fr 1.55fr';
+const GRID_COLUMNS = '1fr 1.35fr 0.95fr 1.55fr';
 
-export default React.memo(function ClinicianTable({
-  clinicians,
-  selectedSpecialty,
-  onSpecialtyChange,
-  onFilteredCountChange,
-}: ClinicianTableProps) {
+export default React.memo(function ClinicianTable({ clinicians }: ClinicianTableProps) {
   const [searchInput, setSearchInput] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [displayCount, setDisplayCount] = useState(INITIAL_BATCH_SIZE);
   const [selectedClinician, setSelectedClinician] = useState<Clinician | null>(null);
-  const [localSelectedSpecialty, setLocalSelectedSpecialty] = useState('');
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const activeSpecialty = selectedSpecialty ?? localSelectedSpecialty;
-
-  const specialtyOptions = useMemo(() => {
-    const specialties = new Set(clinicians.map((c) => c.taxonomyLabel).filter(Boolean));
-    return Array.from(specialties).sort((a, b) => a.localeCompare(b));
-  }, [clinicians]);
-
-  const cliniciansBySpecialty = useMemo(() => {
-    if (!activeSpecialty) return clinicians;
-    return clinicians.filter((c) => c.taxonomyLabel === activeSpecialty);
-  }, [clinicians, activeSpecialty]);
-
   const uniqueCities = useMemo(() => {
-    const cities = new Set(cliniciansBySpecialty.map((c) => c.city));
+    const cities = new Set(clinicians.map((c) => c.city));
     return Array.from(cities).sort((a, b) => a.localeCompare(b));
-  }, [cliniciansBySpecialty]);
+  }, [clinicians]);
 
   const filteredCities = useMemo(() => {
     if (!searchInput.trim()) return [];
@@ -80,30 +59,25 @@ export default React.memo(function ClinicianTable({
 
   const sortedClinicians = useMemo(() => {
     const source = selectedCity
-      ? cliniciansBySpecialty.filter((c) => c.city === selectedCity)
-      : cliniciansBySpecialty;
+      ? clinicians.filter((c) => c.city === selectedCity)
+      : clinicians;
     if (source.length > 1) {
       return [...source].sort(
         (a, b) =>
           a.city.localeCompare(b.city) ||
-          a.taxonomyLabel.localeCompare(b.taxonomyLabel) ||
           a.lastName.localeCompare(b.lastName) ||
           a.firstName.localeCompare(b.firstName)
       );
     }
     return source;
-  }, [cliniciansBySpecialty, selectedCity]);
+  }, [clinicians, selectedCity]);
 
   useEffect(() => {
     setDisplayCount(INITIAL_BATCH_SIZE);
     if (tableScrollRef.current) {
       tableScrollRef.current.scrollTop = 0;
     }
-  }, [selectedCity, activeSpecialty]);
-
-  useEffect(() => {
-    onFilteredCountChange?.(sortedClinicians.length);
-  }, [sortedClinicians.length, onFilteredCountChange]);
+  }, [selectedCity]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -131,17 +105,6 @@ export default React.memo(function ClinicianTable({
   const handleClearSearch = () => {
     setSearchInput('');
     setSelectedCity(null);
-    setShowSuggestions(false);
-  };
-
-  const handleSpecialtyChange = (value: string) => {
-    if (onSpecialtyChange) {
-      onSpecialtyChange(value);
-    } else {
-      setLocalSelectedSpecialty(value);
-    }
-    setSelectedCity(null);
-    setSearchInput('');
     setShowSuggestions(false);
   };
 
@@ -300,32 +263,6 @@ export default React.memo(function ClinicianTable({
 
         <div style={{ whiteSpace: 'nowrap' }}>Provider Name</div>
         <div style={{ textAlign: 'center' }}>Phone</div>
-        <div>
-          <select
-            value={activeSpecialty}
-            onChange={(e) => handleSpecialtyChange(e.target.value)}
-            style={{
-              fontSize: '0.75rem',
-              padding: '0.2rem 0.35rem',
-              backgroundColor: '#1a1a1a',
-              border: '1px solid #4d4d4d',
-              color: '#e5e7eb',
-              borderRadius: '4px',
-              width: '100%',
-              maxWidth: '180px',
-              outline: 'none',
-              textTransform: 'none',
-            }}
-            title="Filter by specialty"
-          >
-            <option value="">All specialties</option>
-            {specialtyOptions.map((specialty) => (
-              <option key={specialty} value={specialty}>
-                {specialty}
-              </option>
-            ))}
-          </select>
-        </div>
         <div>Address</div>
       </div>
 
@@ -333,9 +270,9 @@ export default React.memo(function ClinicianTable({
       <div style={{ flex: 1, overflowY: 'auto' }} ref={tableScrollRef} className="agency-table-scroll">
         {sortedClinicians.length === 0 ? (
           <div style={{ padding: '1rem', textAlign: 'center', color: '#9ca3af', fontSize: '0.9rem' }}>
-            {activeSpecialty
-              ? `No ${activeSpecialty} clinicians found${selectedCity ? ` for "${selectedCity}"` : ''}.`
-              : `No clinicians found for "${selectedCity}"`}
+            {selectedCity
+              ? `No clinicians found for "${selectedCity}"`
+              : 'No clinicians found.'}
           </div>
         ) : (
           <>
@@ -387,11 +324,6 @@ export default React.memo(function ClinicianTable({
                 {/* Phone */}
                 <div className="truncate" style={{ fontSize: '1rem', textAlign: 'center', color: '#fbbf24' }}>
                   {clinician.phone && clinician.phone !== '-' ? clinician.phone : ''}
-                </div>
-
-                {/* Specialty */}
-                <div className="truncate" style={{ fontSize: '1.0625rem', color: '#9ca3af' }}>
-                  {clinician.taxonomyLabel}
                 </div>
 
                 {/* Address */}
