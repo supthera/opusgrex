@@ -42,3 +42,7 @@ next-env.d.ts
 
 # NPPES harvest caches (regenerable)
 data/raw/nppes-*-harvest.json
+
+# Ephemeral refresh job artifacts
+data/raw/dca-freshness-report.json
+data/raw/refresh-summary.json
