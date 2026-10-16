@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  ChevronDown,
   Download,
   LoaderCircle,
   Mail,
@@ -14,8 +15,13 @@ import {
 } from "lucide-react";
 
 import {
+  CA_PROFESSIONS,
   PROFESSION_META,
+  ROSTER_PROFESSIONS,
+  STATE_META,
   parseProfession,
+  parseRosterProfessions,
+  parseState,
   type CaBoardClinician,
   type CaBoardStats,
   type CaProfession,
@@ -26,12 +32,17 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 
+type RosterProfession = Exclude<CaProfession, "all">;
+
+const PICKABLE: RosterProfession[] = CA_PROFESSIONS.filter(
+  (profession): profession is RosterProfession => profession !== "all"
+);
+
 type PagePayload = {
   generatedAt: string;
   profession: CaProfession;
   disclaimer: string;
   stats: CaBoardStats;
-  counties: string[];
   total: number;
   page: number;
   pageSize: number;
@@ -44,35 +55,75 @@ function StatCard({
   label,
   value,
   hint,
+  accent,
+  badge,
 }: {
   label: string;
   value: string | number;
   hint?: string;
+  accent: string;
+  badge?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 font-heading text-3xl font-semibold text-slate-900">
-        {value}
-      </p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className={`h-1 ${accent}`} />
+      <div className="flex flex-1 flex-col px-5 pb-4 pt-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {label}
+          </p>
+          {badge ? (
+            <span className="shrink-0 rounded-full bg-[#4A9B8E]/15 px-2 py-0.5 text-xs font-semibold text-[#2f6f65]">
+              {badge}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-2 font-heading text-3xl font-semibold tracking-tight text-slate-900">
+          {value}
+        </p>
+        {hint ? (
+          <p className="mt-2 text-sm leading-5 text-slate-500">{hint}</p>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function buildApiUrl(
+function selectionFromUrl(
   profession: CaProfession,
+  professionsParam: string | null
+): RosterProfession[] {
+  if (profession === "all") {
+    const picked = parseRosterProfessions(professionsParam);
+    if (
+      picked &&
+      picked.length > 0 &&
+      picked.length < ROSTER_PROFESSIONS.length
+    ) {
+      return picked;
+    }
+    return PICKABLE;
+  }
+  return [profession];
+}
+
+function buildApiUrl(
+  state: ReturnType<typeof parseState>,
+  selected: RosterProfession[],
   opts: {
     page: number;
     q: string;
-    confidence: string;
     contact: string;
-    county: string;
     exportType?: "contactable" | "backlog";
   }
 ) {
+  const subset =
+    selected.length > 1 && selected.length < ROSTER_PROFESSIONS.length;
+  const profession: CaProfession = subset
+    ? "all"
+    : selected.length === 1
+      ? selected[0]
+      : "all";
   const params = new URLSearchParams();
   if (opts.exportType) {
     params.set("export", opts.exportType);
@@ -81,10 +132,107 @@ function buildApiUrl(
     params.set("pageSize", String(PAGE_SIZE));
   }
   if (opts.q.trim()) params.set("q", opts.q.trim());
-  if (opts.confidence !== "all") params.set("confidence", opts.confidence);
   if (opts.contact !== "all") params.set("contact", opts.contact);
-  if (opts.county !== "all") params.set("county", opts.county);
-  return `${PROFESSION_META[profession].apiPath}?${params.toString()}`;
+  if (subset) params.set("professions", selected.join(","));
+  return `/api/roster/${state}/${profession}?${params.toString()}`;
+}
+
+function ProfessionFilter({
+  selected,
+  onChange,
+}: {
+  selected: RosterProfession[];
+  onChange: (next: RosterProfession[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const allOn = selected.length === PICKABLE.length;
+  const label = allOn
+    ? "All professions"
+    : selected.map((key) => PROFESSION_META[key].label).join(", ");
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  function toggle(key: RosterProfession) {
+    const checked = selected.includes(key);
+    if (checked) {
+      if (selected.length === 1) return;
+      onChange(selected.filter((item) => item !== key));
+      return;
+    }
+    onChange([...selected, key]);
+  }
+
+  return (
+    <div ref={rootRef} className="relative text-sm lg:w-52">
+      <span id="profession-filter-label" className="mb-1.5 block font-medium text-slate-700">
+        Professions
+      </span>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-labelledby="profession-filter-label"
+        title={label}
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-slate-900 outline-none focus:border-[#0F4C81] focus:ring-2 focus:ring-[#0F4C81]/20"
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown className="size-4 shrink-0 text-slate-500" />
+      </button>
+      {open ? (
+        <div
+          role="group"
+          aria-label="Professions"
+          className="absolute z-30 mt-1 w-full min-w-[12rem] rounded-lg border border-slate-200 bg-white p-1 shadow-md"
+        >
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-slate-800 hover:bg-slate-50">
+            <input
+              type="checkbox"
+              className="size-4 accent-[#0F4C81]"
+              checked={allOn}
+              onChange={() => {
+                if (!allOn) onChange(PICKABLE);
+              }}
+            />
+            All professions
+          </label>
+          {PICKABLE.map((key) => {
+            const checked = selected.includes(key);
+            return (
+              <label
+                key={key}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-slate-800 hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[#0F4C81]"
+                  checked={checked}
+                  disabled={checked && selected.length === 1}
+                  onChange={() => toggle(key)}
+                />
+                {PROFESSION_META[key].label}
+              </label>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function CaBoardAppClient({
@@ -93,10 +241,20 @@ export default function CaBoardAppClient({
   initialProfession?: CaProfession;
 }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const profession: CaProfession = parseProfession(
     searchParams.get("profession"),
     initialProfession
   );
+  const state = parseState(searchParams.get("state"));
+  const stateLabel = STATE_META[state].label;
+  const professionsParam = searchParams.get("professions");
+  const selected = useMemo(
+    () => selectionFromUrl(profession, professionsParam),
+    [profession, professionsParam]
+  );
+  const multi = selected.length > 1;
 
   const [roster, setRoster] = useState<PagePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,16 +262,38 @@ export default function CaBoardAppClient({
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [confidence, setConfidence] = useState<"all" | "high" | "medium">(
-    "all"
-  );
   const [contact, setContact] = useState<"all" | "phone" | "email" | "both">(
     "all"
   );
-  const [county, setCounty] = useState("all");
   const [page, setPage] = useState(1);
 
   const meta = PROFESSION_META[profession];
+  const nppesSourced =
+    state !== "ca" || profession === "lvn" || profession === "rn";
+  const selectionLabel = multi
+    ? selected.map((key) => PROFESSION_META[key].label).join(", ")
+    : meta.label;
+
+  function writeSelection(next: RosterProfession[]) {
+    const ordered = PICKABLE.filter((key) => next.includes(key));
+    if (ordered.length === 0) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (ordered.length === 1) {
+      const only = ordered[0];
+      if (only === "ot") params.delete("profession");
+      else params.set("profession", only);
+      params.delete("professions");
+    } else if (ordered.length === PICKABLE.length) {
+      params.set("profession", "all");
+      params.delete("professions");
+    } else {
+      params.set("profession", "all");
+      params.set("professions", ordered.join(","));
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    setPage(1);
+  }
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 250);
@@ -123,11 +303,9 @@ export default function CaBoardAppClient({
   useEffect(() => {
     setQuery("");
     setDebouncedQuery("");
-    setConfidence("all");
     setContact("all");
-    setCounty("all");
     setPage(1);
-  }, [profession]);
+  }, [profession, state]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,12 +313,10 @@ export default function CaBoardAppClient({
       try {
         setLoading(true);
         setError(null);
-        const url = buildApiUrl(profession, {
+        const url = buildApiUrl(state, selected, {
           page,
           q: debouncedQuery,
-          confidence,
           contact,
-          county,
         });
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to load roster (${res.status})`);
@@ -158,13 +334,13 @@ export default function CaBoardAppClient({
     return () => {
       cancelled = true;
     };
-  }, [profession, page, debouncedQuery, confidence, contact, county]);
+  }, [state, selected, page, debouncedQuery, contact]);
 
   if (loading && !roster) {
     return (
       <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-10 text-slate-600 shadow-sm">
         <LoaderCircle className="size-5 animate-spin text-[#0F4C81]" />
-        Loading California {meta.shortTitle.toLowerCase()}…
+        Loading {stateLabel} {meta.shortTitle.toLowerCase()}…
       </div>
     );
   }
@@ -189,55 +365,15 @@ export default function CaBoardAppClient({
       : 0;
 
   const exportHref = (exportType: "contactable" | "backlog") =>
-    buildApiUrl(profession, {
+    buildApiUrl(state, selected, {
       page: 1,
       q: debouncedQuery,
-      confidence,
       contact,
-      county,
       exportType,
     });
 
   return (
     <div className="space-y-8">
-      <div className="rounded-2xl border border-[#4A9B8E]/25 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
-        <strong className="text-slate-900">Data labels:</strong>{" "}
-        {roster.disclaimer} Generated{" "}
-        {new Date(roster.generatedAt).toLocaleString("en-US", {
-          timeZone: "America/Los_Angeles",
-        })}{" "}
-        Pacific.
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label={
-            profession === "lvn" || profession === "rn"
-              ? `NPPES ${meta.plural}`
-              : profession === "all"
-                ? "In these rosters"
-                : `Board-active ${meta.plural}`
-          }
-          value={roster.stats.boardActive.toLocaleString()}
-          hint={meta.boardHint}
-        />
-        <StatCard
-          label="With public contact"
-          value={roster.stats.matchedWithContact.toLocaleString()}
-          hint={`${matchRate}% of board-active · phone and/or email via NPPES`}
-        />
-        <StatCard
-          label="Showing now"
-          value={roster.total.toLocaleString()}
-          hint="Contactable rows after current filters"
-        />
-        <StatCard
-          label="Unmatched backlog"
-          value={roster.unmatchedCount.toLocaleString()}
-          hint="Board-active, not yet matched to NPPES"
-        />
-      </div>
-
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <label className="block flex-1 text-sm">
@@ -251,27 +387,11 @@ export default function CaBoardAppClient({
                 setQuery(e.target.value);
                 setPage(1);
               }}
-              placeholder="Name, license, NPI, phone, city…"
+              placeholder="Name, license, NPI, phone, city, county…"
               className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#0F4C81] focus:ring-2 focus:ring-[#0F4C81]/20"
             />
           </label>
-          <label className="block text-sm lg:w-40">
-            <span className="mb-1.5 block font-medium text-slate-700">
-              Match
-            </span>
-            <select
-              value={confidence}
-              onChange={(e) => {
-                setConfidence(e.target.value as typeof confidence);
-                setPage(1);
-              }}
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-[#0F4C81] focus:ring-2 focus:ring-[#0F4C81]/20"
-            >
-              <option value="all">All</option>
-              <option value="high">High (license #)</option>
-              <option value="medium">Medium (name)</option>
-            </select>
-          </label>
+          <ProfessionFilter selected={selected} onChange={writeSelection} />
           <label className="block text-sm lg:w-40">
             <span className="mb-1.5 block font-medium text-slate-700">
               Contact
@@ -290,26 +410,6 @@ export default function CaBoardAppClient({
               <option value="both">Phone + email</option>
             </select>
           </label>
-          <label className="block text-sm lg:w-48">
-            <span className="mb-1.5 block font-medium text-slate-700">
-              Board county
-            </span>
-            <select
-              value={county}
-              onChange={(e) => {
-                setCounty(e.target.value);
-                setPage(1);
-              }}
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-[#0F4C81] focus:ring-2 focus:ring-[#0F4C81]/20"
-            >
-              <option value="all">All counties</option>
-              {roster.counties.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
           <a
             href={exportHref("contactable")}
             className={cn(buttonVariants({ variant: "outline" }), "h-10 gap-2")}
@@ -317,47 +417,105 @@ export default function CaBoardAppClient({
             <Download className="size-4" />
             CSV
           </a>
-          <a
-            href={exportHref("backlog")}
-            className={cn(buttonVariants({ variant: "outline" }), "h-10 gap-2")}
-          >
-            <Download className="size-4" />
-            Unmatched backlog
-          </a>
+          <span className="group/tip relative inline-flex">
+            <a
+              href={exportHref("backlog")}
+              className={cn(buttonVariants({ variant: "outline" }), "h-10 gap-2")}
+              aria-describedby="unmatched-backlog-tip"
+            >
+              <Download className="size-4" />
+              Unmatched backlog
+            </a>
+            <span
+              id="unmatched-backlog-tip"
+              role="tooltip"
+              className="pointer-events-none absolute top-full right-0 z-20 mt-2 hidden w-80 rounded-lg border border-slate-200 bg-white p-3 text-left text-xs leading-relaxed font-normal text-slate-600 shadow-md group-hover/tip:block"
+            >
+              {nppesSourced
+                ? "Unmatched backlog downloads clinicians in the NPPES listing who have no public phone, so they stay out of the table."
+                : "Unmatched backlog downloads a CSV of board-active licensees who were not matched to an NPPES record. They have no public phone or email, so they are left out of the table."}{" "}
+              For {selectionLabel}, that is the count shown on the Unmatched
+              backlog card.
+            </span>
+          </span>
         </div>
         <p className="mt-3 text-sm text-slate-500">
-          Showing page {roster.page} · {roster.total.toLocaleString()}{" "}
-          contactable after filters ·{" "}
+          Showing page {roster.page} ·{" "}
           {roster.stats.boardActive.toLocaleString()}{" "}
-          {profession === "lvn" || profession === "rn"
+          {nppesSourced
             ? "NPPES-enumerated"
             : profession === "all"
               ? "in the combined rosters"
               : "board-active Current"}{" "}
-          ·{" "}
+          · {roster.total.toLocaleString()} contactable after filters ·{" "}
           {roster.unmatchedCount.toLocaleString()} unmatched (excluded from
           table).
           {loading ? " Updating…" : null}
         </p>
       </div>
 
+      <div className="grid items-stretch gap-4 md:grid-cols-3">
+        <StatCard
+          label={
+            nppesSourced
+              ? `NPPES ${meta.plural}`
+              : profession === "all"
+                ? "In these rosters"
+                : `Board-active ${meta.plural}`
+          }
+          value={roster.stats.boardActive.toLocaleString()}
+          accent="bg-[#0F4C81]"
+          hint={
+            state !== "ca"
+              ? `NPPES ${stateLabel} practice listing`
+              : multi && selected.length < PICKABLE.length
+                ? selectionLabel
+                : meta.boardHint
+          }
+        />
+        <StatCard
+          label="With public contact"
+          value={roster.stats.matchedWithContact.toLocaleString()}
+          accent="bg-[#4A9B8E]"
+          badge={`${matchRate}%`}
+          hint="Public phone or email from NPPES"
+        />
+        <StatCard
+          label="Unmatched backlog"
+          value={roster.unmatchedCount.toLocaleString()}
+          accent="bg-slate-400"
+          hint={
+            nppesSourced
+              ? "No public phone, so they stay out of the table"
+              : "No NPPES match, so they stay out of the table"
+          }
+        />
+      </div>
+
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
           <Table2 className="size-4 text-[#0F4C81]" />
           <h2 className="font-heading text-base font-semibold text-slate-900">
-            Contactable active California {meta.plural}
+            Contactable {stateLabel}{" "}
+            {multi && selected.length < PICKABLE.length
+              ? selectionLabel
+              : meta.plural}
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                {profession === "all" ? (
-                  <th className="whitespace-nowrap px-3 py-3 font-semibold">
-                    Profession
+                {multi ? (
+                  <th
+                    className="w-px whitespace-nowrap px-2 py-3 text-center text-[10px] font-semibold tracking-wide"
+                    title="Profession"
+                  >
+                    <span className="sr-only">Profession</span>
+                    <span aria-hidden="true">Prof.</span>
                   </th>
                 ) : null}
-                <th className="whitespace-nowrap px-3 py-3 font-semibold">
+                <th className="w-px whitespace-nowrap px-2 py-3 text-center font-semibold">
                   License #
                 </th>
                 <th className="whitespace-nowrap px-3 py-3 font-semibold">
@@ -391,13 +549,13 @@ export default function CaBoardAppClient({
                 <ClinicianRow
                   key={`${row.profession ?? profession}-${row.licenseNumber}-${row.npi}`}
                   row={row}
-                  showProfession={profession === "all"}
+                  showProfession={multi}
                 />
               ))}
               {roster.clinicians.length === 0 && (
                 <tr>
                   <td
-                    colSpan={profession === "all" ? 10 : 9}
+                    colSpan={multi ? 10 : 9}
                     className="px-4 py-12 text-center text-slate-500"
                   >
                     No rows match these filters.
@@ -433,18 +591,51 @@ export default function CaBoardAppClient({
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-[#0F4C81]/5 px-4 py-4 text-sm text-slate-700">
           <Users className="mb-2 size-4 text-[#0F4C81]" />
-          Primary key is <strong>CA license number</strong>. NPI is secondary
-          from NPPES enrichment.
+          {state === "ca" ? (
+            <>
+              <span className="block">
+                Primary key is <strong>California license number</strong>.
+              </span>
+              <span className="block">
+                NPI is secondary from NPPES enrichment.
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="block">
+                Primary key is <strong>NPI</strong>.
+              </span>
+              <span className="block">
+                State license number is stored when the NPPES file includes it.
+              </span>
+            </>
+          )}
         </div>
         <div className="rounded-2xl border border-slate-200 bg-[#0F4C81]/5 px-4 py-4 text-sm text-slate-700">
           <ShieldCheck className="mb-2 size-4 text-[#4A9B8E]" />
-          <strong>Board-sourced Current</strong> license status — not inferred
-          from NPI alone.
+          {state === "ca" ? (
+            <>
+              <span className="block">
+                <strong>Board-sourced Current</strong> license status.
+              </span>
+              <span className="block">Not inferred from NPI alone.</span>
+            </>
+          ) : (
+            <>
+              <span className="block">
+                <strong>NPPES practice listing</strong> for {stateLabel}.
+              </span>
+              <span className="block">Not a state board license-status file.</span>
+            </>
+          )}
         </div>
         <div className="rounded-2xl border border-slate-200 bg-[#0F4C81]/5 px-4 py-4 text-sm text-slate-700">
           <Phone className="mb-2 size-4 text-[#0F4C81]" />
-          Table only includes rows with a public{" "}
-          <strong>phone and/or email</strong> from NPPES.
+          <span className="block">
+            Table only includes rows with a public{" "}
+            <strong>phone and/or email</strong>.
+          </span>
+          <span className="block">Contact comes from NPPES.</span>
         </div>
       </div>
     </div>
@@ -461,14 +652,17 @@ function ClinicianRow({
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50/80">
       {showProfession ? (
-        <td className="whitespace-nowrap px-3 py-2.5">
-          <Badge variant="secondary" className="bg-[#0F4C81]/10 text-[#0F4C81]">
+        <td className="w-px px-2 py-2.5 text-center">
+          <Badge
+            variant="secondary"
+            className="w-12 justify-center bg-[#0F4C81]/10 px-0 text-[#0F4C81]"
+          >
             {row.profession ? PROFESSION_META[row.profession].label : "—"}
           </Badge>
         </td>
       ) : null}
-      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-slate-800">
-        {row.licenseNumber}
+      <td className="w-px whitespace-nowrap px-2 py-2.5 text-center font-mono text-xs text-slate-800">
+        {row.licenseNumber || "—"}
       </td>
       <td className="px-3 py-2.5">
         <div className="font-medium text-slate-900">{row.displayName}</div>

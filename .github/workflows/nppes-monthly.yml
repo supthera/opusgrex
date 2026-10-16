@@ -119,6 +119,28 @@ jobs:
             nppes-out/stateStats.json \
             --clobber
 
+      - name: Rebuild stored CA nursing rosters
+        working-directory: ${{ github.workspace }}
+        run: |
+          SHARD="opusgrexbackend/nppes-out/states/CA.json"
+          if [ ! -f "$SHARD" ]; then
+            echo "California shard unchanged; stored RN and LVN rosters stay as committed."
+            exit 0
+          fi
+          node scripts/build-ca-nursing-rosters.mjs --shard "$SHARD" --out data
+
+      - name: Rebuild stored Texas and Florida rosters
+        working-directory: ${{ github.workspace }}
+        run: |
+          for STATE in TX FL; do
+            SHARD="opusgrexbackend/nppes-out/states/${STATE}.json"
+            if [ ! -f "$SHARD" ]; then
+              echo "$STATE shard unchanged; stored rosters stay as committed."
+              continue
+            fi
+            node scripts/build-nppes-state-rosters.mjs --shard "$SHARD" --out data
+          done
+
       - name: Commit stats + changelog to repo
         run: |
           cp nppes-out/stateStats.json public/data/stateStats.json
@@ -126,8 +148,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/data/stateStats.json public/data/changelog.json
+          git add ../data/ca-rn-roster.json ../data/ca-lvn-roster.json
+          git add ../data/tx-ot-roster.json ../data/tx-ota-roster.json ../data/tx-pt-roster.json ../data/tx-pta-roster.json ../data/tx-lvn-roster.json ../data/tx-rn-roster.json
+          git add ../data/fl-ot-roster.json ../data/fl-ota-roster.json ../data/fl-pt-roster.json ../data/fl-pta-roster.json ../data/fl-lvn-roster.json ../data/fl-rn-roster.json
           if git diff --cached --quiet; then
-            echo "No stat changes to commit."
+            echo "No data changes to commit."
           else
             git commit -m "chore(nppes): monthly sync $(date -u +%Y-%m-%d)"
             git push

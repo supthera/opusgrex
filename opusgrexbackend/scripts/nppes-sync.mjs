@@ -67,6 +67,33 @@ const NPPES_COLS = {
   deactivation: "NPI Deactivation Date",
 };
 
+function licenseForRow(row, practiceState) {
+  // NPPES stores up to 15 license slots beside the taxonomy codes. Prefer the
+  // primary taxonomy's license in the practice state, then any practice-state
+  // license, then the first license on the record.
+  let fallback = "";
+  let stateMatch = "";
+  let primary = "";
+  const state = String(practiceState || "").trim().toUpperCase();
+  for (let i = 1; i <= 15; i++) {
+    const license = (row[`Provider License Number_${i}`] || "").trim();
+    if (!license) continue;
+    const licState = (row[`Provider License Number State Code_${i}`] || "")
+      .trim()
+      .toUpperCase();
+    const isPrimary =
+      (row[`Healthcare Provider Primary Taxonomy Switch_${i}`] || "")
+        .trim()
+        .toUpperCase() === "Y";
+    if (!fallback) fallback = license;
+    if (state && licState === state) {
+      if (!stateMatch) stateMatch = license;
+      if (isPrimary) primary = license;
+    }
+  }
+  return primary || stateMatch || fallback;
+}
+
 function primaryTaxonomy(row) {
   // Prefer the taxonomy flagged as primary (switch == 'Y'); else first non-empty.
   let firstCode = "";
@@ -116,6 +143,7 @@ function hashRecord(rec) {
     rec.middleName || "",
     rec.credential || "",
     rec.taxonomyCode,
+    rec.licenseNumber || "",
     rec.address || "",
     rec.city,
     rec.state,
@@ -196,6 +224,7 @@ async function main() {
 
     const tax = lookupTaxonomy(taxonomyCode);
     const deactivation = (row[NPPES_COLS.deactivation] || "").trim();
+    const licenseNumber = licenseForRow(row, state);
 
     const rec = {
       npi,
@@ -206,6 +235,7 @@ async function main() {
       taxonomyCode,
       taxonomyLabel: tax.label,
       category: tax.category,
+      licenseNumber: licenseNumber || undefined,
       address: buildAddress(row[NPPES_COLS.addressLine1], row[NPPES_COLS.addressLine2]) || undefined,
       city: (row[NPPES_COLS.city] || "").trim(),
       state,

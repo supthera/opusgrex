@@ -1,10 +1,13 @@
-import type {
-  CaBoardClinician,
-  CaBoardRoster,
-  CaBoardUnmatched,
-  CaProfession,
+import { loadCaBoardRoster, loadSelectedRosters } from "@/app/lib/ca-board";
+import {
+  ROSTER_PROFESSIONS,
+  parseRosterProfessions,
+  type CaBoardClinician,
+  type CaBoardRoster,
+  type CaBoardUnmatched,
+  type CaProfession,
+  type RecruitingState,
 } from "@/app/lib/ca-board-types";
-import { loadCaBoardRoster } from "@/app/lib/ca-board";
 
 export type RosterQuery = {
   page?: string;
@@ -13,6 +16,7 @@ export type RosterQuery = {
   confidence?: string;
   contact?: string;
   county?: string;
+  professions?: string;
   export?: string;
 };
 
@@ -101,41 +105,50 @@ const BACKLOG_HEADERS = [
 
 export async function buildRosterResponse(
   profession: CaProfession,
-  query: RosterQuery
+  query: RosterQuery,
+  state: RecruitingState = "ca"
 ) {
-  const roster: CaBoardRoster = await loadCaBoardRoster(profession);
-  const counties = [
-    ...new Set(
-      roster.clinicians.map((c) => c.boardCounty).filter(Boolean) as string[]
-    ),
-  ].sort((a, b) => a.localeCompare(b));
-
+  const selected = parseRosterProfessions(query.professions);
+  const roster: CaBoardRoster = selected
+    ? await loadSelectedRosters(selected, state)
+    : await loadCaBoardRoster(profession, state);
+  const fileSlug =
+    selected &&
+    selected.length > 0 &&
+    selected.length < ROSTER_PROFESSIONS.length
+      ? selected.join("-")
+      : profession;
+  const includeProfession =
+    (selected ? selected.length : profession === "all" ? ROSTER_PROFESSIONS.length : 1) >
+    1;
   if (query.export === "contactable") {
     const filtered = filterClinicians(roster.clinicians, query);
-    const headers =
-      profession === "all"
-        ? ["profession", ...CONTACTABLE_HEADERS]
-        : CONTACTABLE_HEADERS;
+    const headers = includeProfession
+      ? ["profession", ...CONTACTABLE_HEADERS]
+      : CONTACTABLE_HEADERS;
     const csv = toCsv(
       filtered as unknown as Array<Record<string, string | null | undefined>>,
       headers
     );
     return {
       kind: "csv" as const,
-      filename: `opusgrex-ca-${profession}-contactable.csv`,
+      filename: `opusgrex-${state}-${fileSlug}-contactable.csv`,
       body: csv,
     };
   }
 
   if (query.export === "backlog") {
     const unmatched: CaBoardUnmatched[] = roster.unmatchedBoard ?? [];
+    const headers = includeProfession
+      ? ["profession", ...BACKLOG_HEADERS]
+      : BACKLOG_HEADERS;
     const csv = toCsv(
       unmatched as unknown as Array<Record<string, string | null | undefined>>,
-      BACKLOG_HEADERS
+      headers
     );
     return {
       kind: "csv" as const,
-      filename: `opusgrex-ca-${profession}-unmatched-backlog.csv`,
+      filename: `opusgrex-${state}-${fileSlug}-unmatched-backlog.csv`,
       body: csv,
     };
   }
@@ -159,7 +172,6 @@ export async function buildRosterResponse(
       profession: roster.profession,
       disclaimer: roster.disclaimer,
       stats: roster.stats,
-      counties,
       total: filtered.length,
       page,
       pageSize,

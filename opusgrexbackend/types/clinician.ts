@@ -22,6 +22,8 @@ export interface Clinician {
   /** Friendly specialty label resolved from the taxonomy allowlist. */
   taxonomyLabel: string;
   category: TaxonomyCategory;
+  /** State license number from NPPES, when the record includes one. */
+  licenseNumber?: string;
   /** Practice-location street address (line 1, optionally "+ line 2"). */
   address?: string;
   /** Practice-location city. */

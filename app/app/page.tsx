@@ -4,57 +4,63 @@ import { Suspense } from "react";
 import CaBoardAppClient from "./CaBoardAppClient";
 import {
   PROFESSION_META,
+  ROSTER_PROFESSIONS,
+  STATE_META,
   parseProfession,
+  parseRosterProfessions,
+  parseState,
 } from "@/app/lib/ca-board-types";
 
-export const metadata: Metadata = {
-  title: "CA Clinician Recruiting App — OpusGrex",
-  description:
-    "California OT, OTA, PT, PTA, LVN, and RN clinicians for recruiting, from DCA boards and NPPES public contact info.",
-};
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ state?: string }>;
+}): Promise<Metadata> {
+  const params = await searchParams;
+  const state = parseState(params.state);
+  const label = STATE_META[state].label;
+  return {
+    title: `${STATE_META[state].code} Clinician Recruiting App — OpusGrex`,
+    description: `${label} OT, OTA, PT, PTA, LVN, and RN clinicians for recruiting.`,
+  };
+}
 
 export default async function AppPage({
   searchParams,
 }: {
-  searchParams: Promise<{ profession?: string }>;
+  searchParams: Promise<{
+    profession?: string;
+    professions?: string;
+    state?: string;
+  }>;
 }) {
   const params = await searchParams;
   const profession = parseProfession(params.profession);
+  const state = parseState(params.state);
+  const stateLabel = STATE_META[state].label;
   const meta = PROFESSION_META[profession];
+  const picked = parseRosterProfessions(params.professions);
+  const subset =
+    profession === "all" &&
+    picked != null &&
+    picked.length > 1 &&
+    picked.length < ROSTER_PROFESSIONS.length;
+  const eyebrow = subset
+    ? picked.map((key) => PROFESSION_META[key].label).join(", ")
+    : meta.shortTitle;
 
   return (
     <main className="bg-[linear-gradient(180deg,#FAF9F6_0%,#F3F6F8_100%)] pb-16 pt-8">
       <div className="mx-auto max-w-[1400px] px-6 lg:px-8">
         <div className="max-w-3xl">
           <p className="text-sm font-semibold uppercase tracking-wider text-[#4A9B8E]">
-            Recruiting app · {meta.shortTitle}
+            Recruiting app · {eyebrow}
           </p>
           <h1 className="mt-2 font-heading text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
-            California active {meta.plural}
+            {profession === "all"
+              ? `${stateLabel} Clinicians`
+              : `${stateLabel} ${meta.plural}`}
           </h1>
-          <p className="mt-3 text-base leading-relaxed text-slate-600">
-            {profession === "lvn" || profession === "rn" ? (
-              <>
-                NPPES practice listings for California{" "}
-                <strong>{meta.shortTitle}</strong> with a public phone. This
-                is not a board license-status file.
-              </>
-            ) : profession === "all" ? (
-              <>
-                Every contactable California clinician in this app: DCA{" "}
-                <strong>OT, OTA, PT, and PTA</strong> plus NPPES{" "}
-                <strong>LVN and RN</strong>.
-              </>
-            ) : (
-              <>
-                Board-sourced <strong>Current</strong> {meta.shortTitle} from
-                California DCA, enriched with NPPES practice phone and email
-                when publicly listed.
-              </>
-            )}{" "}
-            Use the <strong>All / OT / OTA / PT / PTA / LVN / RN</strong>{" "}
-            switch in the header to change profession.
-          </p>
         </div>
 
         <div className="mt-8">

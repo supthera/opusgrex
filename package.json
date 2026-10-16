@@ -11,7 +11,10 @@
     "build:ca-ota": "node scripts/build-ca-board-roster.mjs ota",
     "build:ca-pt": "node scripts/build-ca-pt-roster.mjs",
     "build:ca-pta": "node scripts/build-ca-board-roster.mjs pta",
-    "build:ca-board": "node scripts/build-ca-board-roster.mjs"
+    "build:ca-board": "node scripts/build-ca-board-roster.mjs",
+    "build:ca-nursing": "node scripts/build-ca-nursing-rosters.mjs --shard opusgrexbackend/public/data/states/CA.json --out data",
+    "build:tx-rosters": "node scripts/build-nppes-state-rosters.mjs --shard opusgrexbackend/public/data/states/TX.json --out data",
+    "build:fl-rosters": "node scripts/build-nppes-state-rosters.mjs --shard opusgrexbackend/public/data/states/FL.json --out data"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

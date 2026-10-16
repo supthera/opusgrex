@@ -17,7 +17,39 @@ export const ROSTER_PROFESSIONS: Exclude<CaProfession, "all">[] = [
   "rn",
 ];
 
-export const CA_PROFESSIONS: CaProfession[] = ["all", ...ROSTER_PROFESSIONS];
+export const CA_PROFESSIONS: CaProfession[] = [
+  "all",
+  "rn",
+  "lvn",
+  "pt",
+  "pta",
+  "ot",
+  "ota",
+];
+
+export const RECRUITING_STATES = ["ca", "tx", "fl"] as const;
+
+export type RecruitingState = (typeof RECRUITING_STATES)[number];
+
+export const STATE_META: Record<
+  RecruitingState,
+  { label: string; code: string }
+> = {
+  ca: { label: "California", code: "CA" },
+  tx: { label: "Texas", code: "TX" },
+  fl: { label: "Florida", code: "FL" },
+};
+
+export function parseState(
+  value: string | null | undefined,
+  fallback: RecruitingState = "ca"
+): RecruitingState {
+  const normalized = (value || "").trim().toLowerCase();
+  if (normalized === "tx" || normalized === "texas") return "tx";
+  if (normalized === "fl" || normalized === "florida") return "fl";
+  if (normalized === "ca" || normalized === "california") return "ca";
+  return fallback;
+}
 
 export interface CaBoardClinician {
   licenseNumber: string;
@@ -64,6 +96,8 @@ export interface CaBoardUnmatched {
   boardCounty: string;
   boardState: string;
   boardZip: string;
+  /** Set when several rosters are exported together. */
+  profession?: Exclude<CaProfession, "all">;
 }
 
 export interface CaBoardStats {
@@ -169,6 +203,24 @@ export const PROFESSION_META: Record<
     dataFile: "",
   },
 };
+
+export function parseRosterProfessions(
+  value: string | null | undefined
+): Exclude<CaProfession, "all">[] | null {
+  if (!value) return null;
+  const allowed = new Set<string>(ROSTER_PROFESSIONS);
+  const picked = new Set(
+    value
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => allowed.has(part))
+  );
+  if (picked.size === 0) return null;
+  return CA_PROFESSIONS.filter(
+    (profession): profession is Exclude<CaProfession, "all"> =>
+      profession !== "all" && picked.has(profession)
+  );
+}
 
 export function parseProfession(
   value: string | null | undefined,

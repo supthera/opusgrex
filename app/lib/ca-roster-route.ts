@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { buildRosterResponse } from "@/app/lib/ca-board-api";
-import type { CaProfession } from "@/app/lib/ca-board-types";
+import type { CaProfession, RecruitingState } from "@/app/lib/ca-board-types";
 
-export function createRosterRoute(profession: CaProfession) {
+export function createRosterRoute(
+  profession: CaProfession,
+  state: RecruitingState = "ca"
+) {
   return async function GET(request: NextRequest) {
     try {
       const sp = request.nextUrl.searchParams;
@@ -14,8 +17,9 @@ export function createRosterRoute(profession: CaProfession) {
         confidence: sp.get("confidence") || undefined,
         contact: sp.get("contact") || undefined,
         county: sp.get("county") || undefined,
+        professions: sp.get("professions") || undefined,
         export: sp.get("export") || undefined,
-      });
+      }, state);
 
       if (result.kind === "csv") {
         return new NextResponse(result.body, {

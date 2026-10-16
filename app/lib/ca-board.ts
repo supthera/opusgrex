@@ -1,14 +1,16 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
-  PROFESSION_META,
+  CA_PROFESSIONS,
   ROSTER_PROFESSIONS,
+  STATE_META,
   type CaBoardClinician,
   type CaBoardRoster,
   type CaBoardStats,
   type CaBoardUnmatched,
   type CaProfession,
+  type RecruitingState,
 } from "@/app/lib/ca-board-types";
 
 export type {
@@ -34,12 +36,23 @@ function normalizeStats(raw: Record<string, unknown>): CaBoardStats {
   };
 }
 
-const rosterCache = new Map<CaProfession, Promise<CaBoardRoster>>();
+const rosterCache = new Map<
+  string,
+  { stamp: string; roster: Promise<CaBoardRoster> }
+>();
+
+function rosterFileName(
+  state: RecruitingState,
+  profession: Exclude<CaProfession, "all">
+) {
+  return `${state}-${profession}-roster.json`;
+}
 
 async function readRosterFile(
-  profession: Exclude<CaProfession, "all">
+  profession: Exclude<CaProfession, "all">,
+  state: RecruitingState
 ): Promise<CaBoardRoster> {
-  const file = PROFESSION_META[profession].dataFile;
+  const file = rosterFileName(state, profession);
   const filePath = path.join(process.cwd(), "data", file);
   const raw = JSON.parse(await readFile(filePath, "utf8")) as Record<
     string,
@@ -61,9 +74,12 @@ async function readRosterFile(
   };
 }
 
-async function loadMergedRoster(): Promise<CaBoardRoster> {
+async function mergeRosters(
+  professions: Exclude<CaProfession, "all">[],
+  state: RecruitingState
+): Promise<CaBoardRoster> {
   const rosters = await Promise.all(
-    ROSTER_PROFESSIONS.map((profession) => loadCaBoardRoster(profession))
+    professions.map((profession) => loadCaBoardRoster(profession, state))
   );
   const stats: CaBoardStats = {
     boardActive: 0,
@@ -82,7 +98,14 @@ async function loadMergedRoster(): Promise<CaBoardRoster> {
     stats.matchedNoContact += roster.stats.matchedNoContact;
     stats.unmatchedActiveBoard += roster.stats.unmatchedActiveBoard;
     clinicians.push(...roster.clinicians);
-    unmatchedBoard.push(...(roster.unmatchedBoard ?? []));
+    const source =
+      roster.profession === "all" ? undefined : roster.profession;
+    unmatchedBoard.push(
+      ...(roster.unmatchedBoard ?? []).map((row) => ({
+        ...row,
+        profession: source ?? row.profession,
+      }))
+    );
   }
 
   const generatedAt =
@@ -95,23 +118,61 @@ async function loadMergedRoster(): Promise<CaBoardRoster> {
   return {
     generatedAt,
     profession: "all",
-    product: "Combined California recruiting roster",
+    product:
+      state === "ca"
+        ? "Combined California recruiting roster"
+        : `Combined ${STATE_META[state].label} recruiting roster`,
     disclaimer:
-      "Combined contactable California clinicians: DCA board files for OT, OTA, PT, and PTA, plus NPPES practice listings for RN and LVN.",
+      state === "ca"
+        ? "Combined contactable California clinicians: DCA board files for OT, OTA, PT, and PTA, plus NPPES practice listings for RN and LVN."
+        : `Combined contactable ${STATE_META[state].label} clinicians from NPPES practice listings for OT, OTA, PT, PTA, RN, and LVN.`,
     stats,
     clinicians,
     unmatchedBoard,
   };
 }
 
-export function loadCaBoardRoster(
-  profession: CaProfession
-): Promise<CaBoardRoster> {
-  const cached = rosterCache.get(profession);
-  if (cached) return cached;
+async function rosterStamp(
+  profession: Exclude<CaProfession, "all">,
+  state: RecruitingState
+): Promise<string> {
+  const filePath = path.join(
+    process.cwd(),
+    "data",
+    rosterFileName(state, profession)
+  );
+  const info = await stat(filePath);
+  return `${info.mtimeMs}:${info.size}`;
+}
 
-  const pending =
-    profession === "all" ? loadMergedRoster() : readRosterFile(profession);
-  rosterCache.set(profession, pending);
-  return pending;
+export async function loadCaBoardRoster(
+  profession: CaProfession,
+  state: RecruitingState = "ca"
+): Promise<CaBoardRoster> {
+  if (profession === "all") return mergeRosters(ROSTER_PROFESSIONS, state);
+
+  const stamp = await rosterStamp(profession, state);
+  const cacheKey = `${state}:${profession}`;
+  const cached = rosterCache.get(cacheKey);
+  if (cached?.stamp === stamp) return cached.roster;
+
+  const roster = readRosterFile(profession, state);
+  rosterCache.set(cacheKey, { stamp, roster });
+  return roster;
+}
+
+/** Combined roster for a chosen subset, in tab order. */
+export function loadSelectedRosters(
+  professions: Exclude<CaProfession, "all">[],
+  state: RecruitingState = "ca"
+): Promise<CaBoardRoster> {
+  const ordered = CA_PROFESSIONS.filter(
+    (profession): profession is Exclude<CaProfession, "all"> =>
+      profession !== "all" && professions.includes(profession)
+  );
+  if (ordered.length === 0 || ordered.length === ROSTER_PROFESSIONS.length) {
+    return loadCaBoardRoster("all", state);
+  }
+  if (ordered.length === 1) return loadCaBoardRoster(ordered[0], state);
+  return mergeRosters(ordered, state);
 }
