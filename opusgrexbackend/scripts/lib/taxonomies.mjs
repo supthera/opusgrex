@@ -14,6 +14,11 @@ export const TAXONOMY_PREFIXES = [
   { prefix: "367A00000X", label: "Advanced Practice Midwife", credential: "CNM", category: "Nursing" },
   { prefix: "363A", label: "Physician Assistant", credential: "PA", category: "Nursing" },
 
+  // Social work. Longer prefixes win over the general 1041 family.
+  { prefix: "1041C", label: "Clinical Social Worker", credential: "CSW", category: "Social Work" },
+  { prefix: "1041S", label: "School Social Worker", credential: "SSW", category: "Social Work" },
+  { prefix: "1041", label: "Social Worker", credential: "SW", category: "Social Work" },
+
   // Therapy
   { prefix: "2251", label: "Physical Therapist", credential: "PT", category: "Therapy" },
   { prefix: "2252", label: "Physical Therapy Assistant", credential: "PTA", category: "Therapy" },
@@ -24,6 +29,15 @@ export const TAXONOMY_PREFIXES = [
   { prefix: "2278", label: "Respiratory Therapist (Registered)", credential: "RRT", category: "Therapy" },
   { prefix: "2279", label: "Respiratory Therapist (Certified)", credential: "CRT", category: "Therapy" },
   { prefix: "2263", label: "Kinesiotherapist", credential: "KT", category: "Therapy" },
+
+  // Caregiving
+  { prefix: "3747P1801X", label: "Personal Care Attendant", credential: "PCA", category: "Caregiving" },
+  { prefix: "3747A0650X", label: "Attendant Care Provider", credential: "AC", category: "Caregiving" },
+  { prefix: "374U00000X", label: "Home Health Aide", credential: "HHA", category: "Caregiving" },
+  { prefix: "376K00000X", label: "Nurse's Aide", credential: "CNA", category: "Caregiving" },
+  { prefix: "372600000X", label: "Adult Companion", credential: "COMP", category: "Caregiving" },
+  { prefix: "376J00000X", label: "Homemaker", credential: "HM", category: "Caregiving" },
+  { prefix: "373H00000X", label: "Day Training/Habilitation Specialist", credential: "HAB", category: "Caregiving" },
 
   // Technicians / Technologists
   { prefix: "2471", label: "Radiologic Technologist", credential: "RT", category: "Technician" },

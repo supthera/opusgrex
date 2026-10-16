@@ -124,8 +124,8 @@ async function mergeRosters(
         : `Combined ${STATE_META[state].label} recruiting roster`,
     disclaimer:
       state === "ca"
-        ? "Combined contactable California clinicians: DCA board files for OT, OTA, PT, and PTA, plus NPPES practice listings for RN and LVN."
-        : `Combined contactable ${STATE_META[state].label} clinicians from NPPES practice listings for OT, OTA, PT, PTA, RN, and LVN.`,
+        ? "Combined contactable California clinicians. OT, OTA, PT, and PTA come from DCA board files. Every other profession comes from NPPES practice listings."
+        : `Combined contactable ${STATE_META[state].label} clinicians from NPPES practice listings.`,
     stats,
     clinicians,
     unmatchedBoard,

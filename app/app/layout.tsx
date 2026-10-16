@@ -6,62 +6,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  CA_PROFESSIONS,
-  PROFESSION_META,
   RECRUITING_STATES,
   STATE_META,
-  parseProfession,
   parseState,
-  type CaProfession,
   type RecruitingState,
 } from "@/app/lib/ca-board-types";
-
-function ProfessionTabs() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const active = parseProfession(searchParams.get("profession"));
-
-  const setProfession = useCallback(
-    (next: CaProfession) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("professions");
-      if (next === "ot") params.delete("profession");
-      else params.set("profession", next);
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams]
-  );
-
-  return (
-    <div
-      className="flex max-w-full items-center overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5"
-      role="tablist"
-      aria-label="Profession"
-    >
-      {CA_PROFESSIONS.map((key) => {
-        const selected = active === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            onClick={() => setProfession(key)}
-            className={
-              selected
-                ? "rounded-md bg-[#0F4C81] px-2.5 py-1.5 text-xs font-semibold uppercase whitespace-nowrap text-white"
-                : "rounded-md px-2.5 py-1.5 text-xs font-semibold uppercase whitespace-nowrap text-slate-600 hover:text-[#0F4C81]"
-            }
-          >
-            {PROFESSION_META[key].label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 function StateMenu() {
   const router = useRouter();
@@ -167,13 +116,6 @@ export default function AppShellLayout({
               }
             >
               <StateMenu />
-            </Suspense>
-            <Suspense
-              fallback={
-                <div className="h-8 w-[320px] rounded-lg border border-slate-200 bg-white" />
-              }
-            >
-              <ProfessionTabs />
             </Suspense>
           </div>
           <Link

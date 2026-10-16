@@ -128,6 +128,7 @@ jobs:
             exit 0
           fi
           node scripts/build-ca-nursing-rosters.mjs --shard "$SHARD" --out data
+          node scripts/build-nppes-state-rosters.mjs --shard "$SHARD" --out data
 
       - name: Rebuild stored Texas and Florida rosters
         working-directory: ${{ github.workspace }}
@@ -148,9 +149,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/data/stateStats.json public/data/changelog.json
-          git add ../data/ca-rn-roster.json ../data/ca-lvn-roster.json
-          git add ../data/tx-ot-roster.json ../data/tx-ota-roster.json ../data/tx-pt-roster.json ../data/tx-pta-roster.json ../data/tx-lvn-roster.json ../data/tx-rn-roster.json
-          git add ../data/fl-ot-roster.json ../data/fl-ota-roster.json ../data/fl-pt-roster.json ../data/fl-pta-roster.json ../data/fl-lvn-roster.json ../data/fl-rn-roster.json
+          git add ../data/*-roster.json
           if git diff --cached --quiet; then
             echo "No data changes to commit."
           else

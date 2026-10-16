@@ -16,6 +16,7 @@ import {
 
 import {
   CA_PROFESSIONS,
+  PROFESSION_GROUPS,
   PROFESSION_META,
   ROSTER_PROFESSIONS,
   STATE_META,
@@ -147,9 +148,20 @@ function ProfessionFilter({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const allOn = selected.length === PICKABLE.length;
+  const fullGroups = PROFESSION_GROUPS.filter((group) =>
+    group.professions.every((key) => selected.includes(key))
+  );
+  const groupedCount = fullGroups.reduce(
+    (count, group) => count + group.professions.length,
+    0
+  );
   const label = allOn
     ? "All professions"
-    : selected.map((key) => PROFESSION_META[key].label).join(", ");
+    : groupedCount === selected.length && fullGroups.length > 0
+      ? fullGroups.map((group) => group.label).join(", ")
+      : selected.length === 1
+        ? PROFESSION_META[selected[0]].shortTitle
+        : selected.map((key) => PROFESSION_META[key].label).join(", ");
 
   useEffect(() => {
     if (!open) return;
@@ -177,8 +189,19 @@ function ProfessionFilter({
     onChange([...selected, key]);
   }
 
+  function toggleGroup(keys: RosterProfession[]) {
+    const allIn = keys.every((key) => selected.includes(key));
+    if (allIn) {
+      const next = selected.filter((key) => !keys.includes(key));
+      if (next.length === 0) return;
+      onChange(next);
+      return;
+    }
+    onChange([...selected, ...keys.filter((key) => !selected.includes(key))]);
+  }
+
   return (
-    <div ref={rootRef} className="relative text-sm lg:w-52">
+    <div ref={rootRef} className="relative text-sm lg:w-72">
       <span id="profession-filter-label" className="mb-1.5 block font-medium text-slate-700">
         Professions
       </span>
@@ -198,7 +221,7 @@ function ProfessionFilter({
         <div
           role="group"
           aria-label="Professions"
-          className="absolute z-30 mt-1 w-full min-w-[12rem] rounded-lg border border-slate-200 bg-white p-1 shadow-md"
+          className="absolute z-30 mt-1 max-h-[min(24rem,calc(100vh-12rem))] w-full min-w-[18rem] overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-md"
         >
           <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-slate-800 hover:bg-slate-50">
             <input
@@ -211,22 +234,51 @@ function ProfessionFilter({
             />
             All professions
           </label>
-          {PICKABLE.map((key) => {
-            const checked = selected.includes(key);
+          {PROFESSION_GROUPS.map((group) => {
+            const groupOn = group.professions.every((key) =>
+              selected.includes(key)
+            );
+            const groupSome = group.professions.some((key) =>
+              selected.includes(key)
+            );
             return (
-              <label
-                key={key}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-slate-800 hover:bg-slate-50"
-              >
-                <input
-                  type="checkbox"
-                  className="size-4 accent-[#0F4C81]"
-                  checked={checked}
-                  disabled={checked && selected.length === 1}
-                  onChange={() => toggle(key)}
-                />
-                {PROFESSION_META[key].label}
-              </label>
+              <div key={group.label} className="mt-1 border-t border-slate-100 pt-1">
+                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-[#0F4C81]"
+                    checked={groupOn}
+                    ref={(element) => {
+                      if (element) element.indeterminate = groupSome && !groupOn;
+                    }}
+                    onChange={() => toggleGroup(group.professions)}
+                  />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    {group.label}
+                  </span>
+                </label>
+                {group.professions.map((key) => {
+                  const checked = selected.includes(key);
+                  return (
+                    <label
+                      key={key}
+                      className="flex cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 pl-7 text-slate-800 hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[#0F4C81]"
+                        checked={checked}
+                        disabled={checked && selected.length === 1}
+                        onChange={() => toggle(key)}
+                      />
+                      <span className="flex-1">{PROFESSION_META[key].shortTitle}</span>
+                      <span className="text-[10px] font-semibold tracking-wide text-slate-400">
+                        {PROFESSION_META[key].label}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             );
           })}
         </div>
@@ -268,8 +320,9 @@ export default function CaBoardAppClient({
   const [page, setPage] = useState(1);
 
   const meta = PROFESSION_META[profession];
-  const nppesSourced =
-    state !== "ca" || profession === "lvn" || profession === "rn";
+  const boardSourced =
+    state === "ca" && PROFESSION_META[profession].source === "board";
+  const nppesSourced = state !== "ca" || PROFESSION_META[profession].source === "nppes";
   const selectionLabel = multi
     ? selected.map((key) => PROFESSION_META[key].label).join(", ")
     : meta.label;
@@ -591,7 +644,7 @@ export default function CaBoardAppClient({
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-[#0F4C81]/5 px-4 py-4 text-sm text-slate-700">
           <Users className="mb-2 size-4 text-[#0F4C81]" />
-          {state === "ca" ? (
+          {boardSourced ? (
             <>
               <span className="block">
                 Primary key is <strong>California license number</strong>.
@@ -613,7 +666,7 @@ export default function CaBoardAppClient({
         </div>
         <div className="rounded-2xl border border-slate-200 bg-[#0F4C81]/5 px-4 py-4 text-sm text-slate-700">
           <ShieldCheck className="mb-2 size-4 text-[#4A9B8E]" />
-          {state === "ca" ? (
+          {boardSourced ? (
             <>
               <span className="block">
                 <strong>Board-sourced Current</strong> license status.
@@ -655,7 +708,7 @@ function ClinicianRow({
         <td className="w-px px-2 py-2.5 text-center">
           <Badge
             variant="secondary"
-            className="w-12 justify-center bg-[#0F4C81]/10 px-0 text-[#0F4C81]"
+            className="min-w-12 justify-center bg-[#0F4C81]/10 px-1.5 text-[#0F4C81]"
           >
             {row.profession ? PROFESSION_META[row.profession].label : "—"}
           </Badge>

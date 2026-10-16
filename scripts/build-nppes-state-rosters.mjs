@@ -7,37 +7,41 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const PROFESSIONS = [
-  {
-    key: "ot",
-    prefixes: ["225X"],
-    licenseType: "Occupational Therapist",
-  },
-  {
-    key: "ota",
-    prefixes: ["224Z"],
-    licenseType: "Occupational Therapy Assistant",
-  },
-  {
-    key: "pt",
-    prefixes: ["2251"],
-    licenseType: "Physical Therapist",
-  },
-  {
-    key: "pta",
-    prefixes: ["2252"],
-    licenseType: "Physical Therapist Assistant",
-  },
-  {
-    key: "lvn",
-    prefixes: ["164X", "164W"],
-    licenseType: "Licensed Vocational Nurse",
-  },
-  {
-    key: "rn",
-    prefixes: ["163W"],
-    licenseType: "Registered Nurse",
-  },
+  { key: "ot", prefixes: ["225X"], licenseType: "Occupational Therapist", clean: ["OT"] },
+  { key: "ota", prefixes: ["224Z"], licenseType: "Occupational Therapy Assistant", clean: ["COTA", "OTA"] },
+  { key: "pt", prefixes: ["2251"], licenseType: "Physical Therapist", clean: ["PT"] },
+  { key: "pta", prefixes: ["2252"], licenseType: "Physical Therapist Assistant", clean: ["PTA"] },
+  { key: "lvn", prefixes: ["164X", "164W"], licenseType: "Licensed Vocational Nurse", clean: ["LVN", "LPN", "VN"] },
+  { key: "rn", prefixes: ["163W"], licenseType: "Registered Nurse", clean: ["RN"] },
+  { key: "np", prefixes: ["363L"], licenseType: "Nurse Practitioner", clean: ["NP"] },
+  { key: "pa", prefixes: ["363A"], licenseType: "Physician Assistant", clean: ["PA"] },
+  { key: "cns", prefixes: ["364S"], licenseType: "Clinical Nurse Specialist", clean: ["CNS"] },
+  { key: "crna", prefixes: ["3675"], licenseType: "Nurse Anesthetist", clean: ["CRNA"] },
+  { key: "cnm", prefixes: ["367A"], licenseType: "Nurse Midwife", clean: ["CNM"] },
+  { key: "slp", prefixes: ["235Z"], licenseType: "Speech-Language Pathologist", clean: ["SLP"] },
+  { key: "aud", prefixes: ["231H"], licenseType: "Audiologist", clean: ["AUD"] },
+  { key: "rt", prefixes: ["2278", "2279"], licenseType: "Respiratory Therapist", clean: ["RRT", "CRT"] },
+  { key: "kt", prefixes: ["2263"], licenseType: "Kinesiotherapist", clean: ["KT"] },
+  { key: "csw", prefixes: ["1041C"], licenseType: "Clinical Social Worker", clean: ["LCSW", "LMSW", "CSW"] },
+  { key: "ssw", prefixes: ["1041S"], licenseType: "School Social Worker", clean: ["SSW"] },
+  { key: "sw", prefixes: ["1041"], licenseType: "Social Worker", clean: ["LCSW", "LMSW", "LSW"] },
+  { key: "pca", prefixes: ["3747P1801X"], licenseType: "Personal Care Attendant", clean: ["PCA"] },
+  { key: "ac", prefixes: ["3747A0650X"], licenseType: "Attendant Care Provider", clean: [] },
+  { key: "hha", prefixes: ["374U"], licenseType: "Home Health Aide", clean: ["HHA"] },
+  { key: "cna", prefixes: ["376K"], licenseType: "Nurse Aide", clean: ["CNA"] },
+  { key: "comp", prefixes: ["3726"], licenseType: "Adult Companion", clean: [] },
+  { key: "hm", prefixes: ["376J"], licenseType: "Homemaker", clean: [] },
+  { key: "hab", prefixes: ["373H"], licenseType: "Day Training and Habilitation", clean: [] },
+  { key: "st", prefixes: ["247200000X"], licenseType: "Surgical Technologist", clean: ["CST"] },
+  { key: "rad", prefixes: ["2471"], licenseType: "Radiologic Technologist", clean: [] },
+  { key: "cvt", prefixes: ["246W"], licenseType: "Cardiovascular Technologist", clean: ["CVT"] },
+  { key: "mlt", prefixes: ["246Q"], licenseType: "Lab Technician", clean: ["MLT"] },
+  { key: "ht", prefixes: ["246R"], licenseType: "Health Technician", clean: [] },
+  { key: "hit", prefixes: ["246Y"], licenseType: "Health Information Technician", clean: ["HIT"] },
+  { key: "aa", prefixes: ["367H"], licenseType: "Anesthesiologist Assistant", clean: [] },
 ];
+
+const SKIP_FOR_CALIFORNIA = new Set(["ot", "ota", "pt", "pta", "rn", "lvn"]);
 
 function parseArgs(argv) {
   const args = {};
@@ -70,15 +74,8 @@ function displayName(clinician) {
 
 function cleanLicense(profession, value) {
   const text = String(value || "").trim();
-  const prefixes = {
-    rn: ["RN"],
-    lvn: ["LVN", "LPN", "VN"],
-    ot: ["OT"],
-    ota: ["COTA", "OTA"],
-    pt: ["PT"],
-    pta: ["PTA"],
-  }[profession];
-  if (!prefixes) return text;
+  const prefixes = profession.clean || [];
+  if (!prefixes.length) return text;
   for (const prefix of prefixes) {
     const match = text.match(
       new RegExp(`^(?:CA[\\s\\-:#]*)?${prefix}[\\s\\-:#]*(.+)$`, "i")
@@ -108,7 +105,7 @@ function toRosterRow(clinician, profession, licenses, stateCode, stateName) {
   const fromShard = (clinician.licenseNumber || "").trim();
   const licenseNumber = fromShard || licenses.get(clinician.npi) || "";
   return {
-    licenseNumber: cleanLicense(profession.key, licenseNumber),
+    licenseNumber: cleanLicense(profession, licenseNumber),
     npi: clinician.npi,
     displayName: displayName(clinician),
     credential: clinician.credential || profession.key.toUpperCase(),
@@ -152,12 +149,34 @@ async function main() {
   const disclaimer = `NPPES public practice listings for ${stateName}. This is not a state board license-status file, so rows are enumerated clinicians with a public phone, not board-confirmed Current licenses.`;
   await mkdir(args.out, { recursive: true });
 
+  function professionFor(code) {
+    const normalized = String(code || "").toUpperCase();
+    let best = null;
+    let bestLen = -1;
+    for (const profession of PROFESSIONS) {
+      for (const prefix of profession.prefixes) {
+        if (normalized.startsWith(prefix) && prefix.length > bestLen) {
+          best = profession;
+          bestLen = prefix.length;
+        }
+      }
+    }
+    return best;
+  }
+
+  const grouped = new Map(PROFESSIONS.map((profession) => [profession.key, []]));
+  for (const clinician of clinicians) {
+    const profession = professionFor(clinician.taxonomyCode);
+    if (profession) grouped.get(profession.key).push(clinician);
+  }
+
   for (const profession of PROFESSIONS) {
-    const matches = clinicians.filter((clinician) =>
-      profession.prefixes.some((prefix) =>
-        String(clinician.taxonomyCode || "").startsWith(prefix)
-      )
-    );
+    if (stateCode === "CA" && SKIP_FOR_CALIFORNIA.has(profession.key)) continue;
+    const matches = grouped.get(profession.key);
+    if (matches.length === 0) {
+      console.log(`${stateCode.toLowerCase()}-${profession.key}-roster.json: no shard rows, left the stored file`);
+      continue;
+    }
     const withPhone = matches.filter((clinician) => clinician.phone);
     const file = `${stateCode.toLowerCase()}-${profession.key}-roster.json`;
     const filePath = path.join(args.out, file);
